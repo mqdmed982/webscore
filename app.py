@@ -6,7 +6,7 @@ from flask import Flask, render_template, request, jsonify
 app = Flask(__name__)
 
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
-SIA_PASSWORD = os.getenv("SIA_PASSWORD", "q7QmIbkYzVN/Vw=p")
+SIA_PASSWORD = os.getenv("SIA_PASSWORD", "YOUR_PASSWORD_HERE")
 
 def format_ts(ts):
     """تحويل Unix Timestamp لتاريخ عادي بحال التصويرة"""
