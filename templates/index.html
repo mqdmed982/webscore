@@ -31,7 +31,7 @@
         <div class="card mb-3 shadow-sm border">
             <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
             <div class="card-body p-2">
-                <textarea id="domainInput" class="form-control" rows="3" placeholder="awsglobalaccelerator.com&#10;google.com">awsglobalaccelerator.com</textarea>
+                <textarea id="domainInput" class="form-control" rows="3" placeholder="ryanair.analyvora.live&#10;google.com">ryanair.analyvora.live</textarea>
             </div>
         </div>
 
@@ -67,11 +67,8 @@
         <div class="card shadow-sm border">
             <div class="card-header-blue" id="tableHeaderLabel">Domain - General</div>
             <div class="card-body p-3">
-                <div class="table-responsive">
-                    <table id="resultsTable" class="table table-bordered table-custom w-100">
-                        <thead></thead>
-                        <tbody></tbody>
-                    </table>
+                <div class="table-responsive" id="tableWrap">
+                    <!-- كيتعمر أوتوماتيك بدون أي مشاكل -->
                 </div>
             </div>
         </div>
@@ -89,18 +86,17 @@
     <script>
         let dtInstance = null;
 
-        // إعدادات الأعمدة والعناوين لجميع الأزرار الـ 8
-        const TABLE_CONFIGS = {
+        const CONFIGS = {
             general: {
                 title: "Domain - General",
                 columns: [
                     { title: "Domain", data: "domain", defaultContent: "N/A" },
                     { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
-                    { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d)}</code>` },
+                    { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d || [])}</code>` },
                     { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : '<span class="text-secondary">false</span>' },
-                    { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${w.created || 'N/A'}</li><li><b>expires:</b> ${w.expires || 'N/A'}</li><li><b>registrar:</b> ${w.registrar || 'N/A'}</li></ul>` },
+                    { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${(w && w.created) || 'N/A'}</li><li><b>expires:</b> ${(w && w.expires) || 'N/A'}</li><li><b>registrar:</b> ${(w && w.registrar) || 'N/A'}</li></ul>` },
                     { title: "Score", data: "score", defaultContent: "0" },
-                    { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c}</span></li></ul>` }
+                    { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c || 'N/A'}</span></li></ul>` }
                 ]
             },
             reputation_dim: {
@@ -169,7 +165,7 @@
                 columns: [
                     { title: "Domain", data: "domain", defaultContent: "N/A" },
                     { title: "Hostname", data: "hostname", defaultContent: "N/A" },
-                    { title: "Record Type", data: "type", defaultContent: "CNAME" },
+                    { title: "Record Type", data: "type", defaultContent: "Observed" },
                     { title: "Status", data: "status", defaultContent: "Clean" }
                 ]
             }
@@ -179,7 +175,8 @@
             const inputVal = document.getElementById('domainInput').value.trim();
             if (!inputVal) return alert("المرجو إدخال دومين.");
 
-            const mode = document.querySelector('input[name="scanType"]:checked').value;
+            const selectedRadio = document.querySelector('input[name="scanType"]:checked');
+            const mode = selectedRadio ? selectedRadio.value : 'general';
             const btn = document.getElementById('btnAnalyze');
             btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Analyzing...`;
             btn.disabled = true;
@@ -191,35 +188,56 @@
                     body: JSON.stringify({ domains: inputVal, mode: mode })
                 });
                 const res = await response.json();
-
-                renderDynamicTable(res.mode, res.data);
+                renderTable(res.mode, res.data || []);
             } catch (err) {
-                alert("وقع خطأ فـ الاتصال بالخادم.");
+                console.error(err);
+                renderTable(mode, []);
             } finally {
                 btn.innerHTML = `<i class="bi bi-search"></i> Analyze Domains`;
                 btn.disabled = false;
             }
         }
 
-        function renderDynamicTable(mode, data) {
-            const config = TABLE_CONFIGS[mode] || TABLE_CONFIGS['general'];
-
-            // تدمير الجدول القديم ومسحه بالكامل
-            if (dtInstance) {
-                dtInstance.destroy();
-                $('#resultsTable').empty();
-            }
-
+        function renderTable(mode, data) {
+            const config = CONFIGS[mode] || CONFIGS['general'];
             document.getElementById('tableHeaderLabel').innerText = config.title;
 
-            // توليد الـ Headers وخانات البحث تحت كل عمود
+            // إعادة بناء الـ HTML بالكامل داخل الـ Wrapper لتفادي تشنج DataTables
+            $('#tableWrap').html(`
+                <table id="resultsTable" class="table table-bordered table-custom w-100">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            `);
+
             let theadHtml = '<tr>';
             config.columns.forEach(c => theadHtml += `<th>${c.title}</th>`);
             theadHtml += '</tr><tr class="filters">';
             config.columns.forEach(c => theadHtml += `<th><input type="text" class="col-filter" placeholder="${c.title}" /></th>`);
             theadHtml += '</tr>';
 
-            $('#resultsTable').html(`<thead>${theadHtml}</thead><tbody></tbody>`);
+            $('#resultsTable thead').html(theadHtml);
 
-            // بناء الجدول بـ DataTables
-            dtInstance = $('#resultsTable').DataTabl
+            dtInstance = $('#resultsTable').DataTable({
+                data: data,
+                columns: config.columns,
+                orderCellsTop: true,
+                dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
+                buttons: [{ extend: 'csvHtml5', text: 'Export CSV', className: 'btn btn-export' }],
+                initComplete: function () {
+                    var api = this.api();
+                    api.columns().eq(0).each(function (colIdx) {
+                        $('input', $('.filters th')[colIdx]).on('keyup change', function () {
+                            api.column(colIdx).search(this.value).draw();
+                        });
+                    });
+                }
+            });
+        }
+
+        $(document).ready(() => {
+            runAnalysis();
+        });
+    </script>
+</body>
+</html>
