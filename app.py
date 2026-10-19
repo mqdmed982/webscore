@@ -1,4 +1,6 @@
 import os
+import re
+import socket
 import requests
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
@@ -31,6 +33,26 @@ def get_auth_token():
     except Exception:
         return None
 
+def is_ip_address(val):
+    """التحقق واش المدخل هو IP ولا Domain"""
+    pattern = r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"
+    return bool(re.match(pattern, val))
+
+def fetch_ip_intel(ip, token):
+    """فحص سمعة الـ IP من Spamhaus SIA"""
+    if not token:
+        return None
+    # Spamhaus endpoint الخاص بالـ IP
+    url = f"https://api.spamhaus.org/api/intel/v1/byobject/ip/{ip}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    try:
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
 def fetch_sia(endpoint, token):
     if not token:
         return None
@@ -55,14 +77,53 @@ def scan():
         raw_domains = data.get('domains', '')
         mode = data.get('mode', 'general')
 
-        domains = [d.strip() for d in raw_domains.split('\n') if d.strip()]
+        items = [d.strip() for d in raw_domains.split('\n') if d.strip()]
         token = get_auth_token()
         results = []
 
-        for domain in domains:
-            clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
+        for item in items:
+            clean = item.replace("https://", "").replace("http://", "").split("/")[0]
 
-            if mode == 'general':
+            # ========== زر IP REPUTATION الجديد ==========
+            if mode == 'ip_rep':
+                # إذا دخل المستخدم IP مباشرة أو دخل دومين وجبدنا الـ IP ديالو
+                target_ip = clean
+                domain_name = "N/A"
+
+                if not is_ip_address(clean):
+                    domain_name = clean
+                    try:
+                        target_ip = socket.gethostbyname(clean)
+                    except Exception:
+                        target_ip = "Unable to resolve"
+
+                # فحص الـ IP فـ Spamhaus
+                ip_data = {}
+                if target_ip and target_ip != "Unable to resolve":
+                    ip_data = fetch_ip_intel(target_ip, token) or {}
+
+                # استخراج Reverse DNS
+                ptr = "N/A"
+                if target_ip and target_ip != "Unable to resolve":
+                    try:
+                        ptr = socket.gethostbyaddr(target_ip)[0]
+                    except Exception:
+                        ptr = "No PTR Record"
+
+                results.append({
+                    "target": clean,
+                    "resolved_ip": target_ip,
+                    "ptr": ptr,
+                    "sbl": "Listed" if ip_data.get("sbl") else "Clean",
+                    "xbl": "Listed" if ip_data.get("xbl") else "Clean",
+                    "pbl": "Listed" if ip_data.get("pbl") else "Clean",
+                    "asn": ip_data.get("asn", "AS Cloud / Hosting"),
+                    "country": ip_data.get("country", "US"),
+                    "threat_score": ip_data.get("score", 0)
+                })
+
+            # ========== باقي الأزرار العادية ==========
+            elif mode == 'general':
                 res = fetch_sia(f"{clean}", token) or {}
                 whois_info = res.get("whois") or {}
                 results.append({
