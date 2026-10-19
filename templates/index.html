@@ -24,26 +24,44 @@
         <div class="card mb-3">
             <div class="card-header bg-light"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
             <div class="card-body">
-                <textarea id="domainInput" class="form-control" rows="4" placeholder="lotterysambadresult.in&#10;example.com"></textarea>
+                <textarea id="domainInput" class="form-control" rows="3" placeholder="lotterysambadresult.in&#10;google.com"></textarea>
             </div>
         </div>
 
-        <!-- Check Options -->
+        <!-- Buttons Options -->
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <div class="card h-100 p-3">
                     <h6 class="fw-bold">Basic Checks</h6>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="checkType" checked> <label class="form-check-label">General Overview</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="checkType"> <label class="form-check-label">Reputation Dimensions</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="checkType"> <label class="form-check-label">Domain Context</label></div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeGeneral" value="general" checked>
+                        <label class="form-check-label" for="modeGeneral">General Overview</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeRep" value="reputation_dim">
+                        <label class="form-check-label" for="modeRep">Reputation Dimensions</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeContext" value="domain_context">
+                        <label class="form-check-label" for="modeContext">Domain Context</label>
+                    </div>
                 </div>
             </div>
             <div class="col-md-6">
                 <div class="card h-100 p-3">
                     <h6 class="fw-bold">Reputation Insights</h6>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="repType"> <label class="form-check-label">Blacklist Listing</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="repType"> <label class="form-check-label">Domain Senders</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="repType"> <label class="form-check-label">A Record Reputation</label></div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeBlacklist" value="blacklist">
+                        <label class="form-check-label" for="modeBlacklist">Blacklist Listing</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeSenders" value="domain_senders">
+                        <label class="form-check-label" for="modeSenders">Domain Senders</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input check-mode" type="radio" name="scanMode" id="modeARecord" value="a_record">
+                        <label class="form-check-label" for="modeARecord">A Record Reputation</label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -54,23 +72,14 @@
             </button>
         </div>
 
-        <!-- Results Table -->
+        <!-- Dynamic Results Table -->
         <div class="card">
-            <div class="card-header card-header-blue">Domain - General</div>
+            <div class="card-header card-header-blue" id="tableTitle">Domain - General</div>
             <div class="card-body">
-                <div class="table-responsive">
+                <div class="table-responsive" id="tableContainer">
+                    <!-- الجدول كيتبدل ديناميكياً هنا -->
                     <table id="resultsTable" class="table table-bordered table-striped w-100">
-                        <thead>
-                            <tr>
-                                <th>Domain</th>
-                                <th>Last Seen</th>
-                                <th>Tags</th>
-                                <th>Abused</th>
-                                <th>Whois</th>
-                                <th>Score</th>
-                                <th>Clusters / Auth</th>
-                            </tr>
-                        </thead>
+                        <thead></thead>
                         <tbody></tbody>
                     </table>
                 </div>
@@ -82,50 +91,115 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        let table = $('#resultsTable').DataTable();
+        let dataTable = null;
 
         async function analyzeDomains() {
             const domains = document.getElementById('domainInput').value;
             if(!domains.trim()) return alert("عافاك دخل شي دومين أولا!");
 
+            // كنعرفو أشنو ختار المستخدم
+            const selectedMode = document.querySelector('input[name="scanMode"]:checked').value;
+
             const btn = document.getElementById('btnAnalyze');
-            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> جاري الفحص...`;
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Analyzing...`;
             btn.disabled = true;
 
             try {
                 const response = await fetch('/scan', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ domains: domains })
+                    body: JSON.stringify({ domains: domains, mode: selectedMode })
                 });
-                const data = await response.json();
+                const res = await response.json();
 
-                table.clear();
-                data.forEach(item => {
-                    const whoisHtml = `
-                        <ul class="mb-0 ps-3 small">
-                            <li><b>created:</b> ${item.whois.created}</li>
-                            <li><b>expires:</b> ${item.whois.expires}</li>
-                            <li><b>registrar:</b> ${item.whois.registrar}</li>
-                        </ul>
-                    `;
-                    table.row.add([
-                        item.domain,
-                        item.last_seen,
-                        `<span class="badge bg-secondary">${item.tags}</span>`,
-                        item.abused ? '<span class="badge bg-danger">True</span>' : '<span class="badge bg-success">False</span>',
-                        whoisHtml,
-                        item.score,
-                        `<code>${item.cluster_auth}</code>`
-                    ]);
-                });
-                table.draw();
+                renderTable(res.mode, res.data);
+
             } catch (err) {
                 alert("وقع خطأ فالفحص");
             } finally {
                 btn.innerHTML = `<i class="bi bi-search"></i> Analyze Domains`;
                 btn.disabled = false;
             }
+        }
+
+        function renderTable(mode, data) {
+            // إلا كان جدول قديم كنمحيوه باش نعاودو نبنيوه بأعمدة جداد
+            if (dataTable) {
+                dataTable.destroy();
+                $('#resultsTable').empty();
+            }
+
+            let title = "Domain - General";
+            let columns = [];
+            let rows = [];
+
+            if (mode === 'a_record') {
+                title = "Domain - A Record Reputation";
+                columns = [
+                    { title: "Domain" },
+                    { title: "Resolved IP (A Record)" },
+                    { title: "Reverse DNS (PTR)" },
+                    { title: "Status" },
+                    { title: "Threat Score" }
+                ];
+                rows = data.map(i => [
+                    i.domain,
+                    `<code>${i.ip}</code>`,
+                    i.ptr,
+                    i.status === 'Active' ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-danger">Inactive</span>',
+                    i.score
+                ]);
+            } else if (mode === 'blacklist') {
+                title = "Domain - Blacklist Listing";
+                columns = [
+                    { title: "Domain" },
+                    { title: "Spamhaus" },
+                    { title: "SURBL" },
+                    { title: "Abuse Score" },
+                    { title: "Listing Status" }
+                ];
+                rows = data.map(i => [
+                    i.domain,
+                    `<span class="badge bg-success">${i.spamhaus}</span>`,
+                    `<span class="badge bg-success">${i.surbl}</span>`,
+                    i.abuse_score,
+                    `<span class="badge bg-success">${i.status}</span>`
+                ]);
+            } else {
+                // الوضع العادي: General Overview
+                title = "Domain - General";
+                columns = [
+                    { title: "Domain" },
+                    { title: "Last Seen" },
+                    { title: "Tags" },
+                    { title: "Abused" },
+                    { title: "Whois" },
+                    { title: "Score" },
+                    { title: "Clusters" }
+                ];
+                rows = data.map(i => [
+                    i.domain,
+                    i.last_seen,
+                    `<span class="badge bg-secondary">${i.tags}</span>`,
+                    i.abused ? '<span class="badge bg-danger">True</span>' : '<span class="badge bg-success">False</span>',
+                    `<ul class="mb-0 ps-3 small">
+                        <li><b>created:</b> ${i.whois.created}</li>
+                        <li><b>expires:</b> ${i.whois.expires}</li>
+                        <li><b>registrar:</b> ${i.whois.registrar}</li>
+                    </ul>`,
+                    i.score,
+                    `<code>${i.clusters}</code>`
+                ]);
+            }
+
+            // تبديل عنوان الكارد
+            document.getElementById('tableTitle').innerText = title;
+
+            // بناء الجدول بـ DataTables
+            dataTable = $('#resultsTable').DataTable({
+                data: rows,
+                columns: columns
+            });
         }
     </script>
 </body>
