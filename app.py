@@ -1,12 +1,21 @@
 import os
 import requests
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# المعلومات لي طالعة عندك فـ التصويرة
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
-SIA_PASSWORD = os.getenv("SIA_PASSWORD", "حط_هنا_كلمة_السر_ديال_الحساب")
+SIA_PASSWORD = os.getenv("SIA_PASSWORD", "YOUR_PASSWORD_HERE")
+
+def format_ts(ts):
+    """تحويل Unix Timestamp لتاريخ عادي بحال التصويرة"""
+    if not ts or ts == "N/A":
+        return "N/A"
+    try:
+        return datetime.utcfromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return str(ts)
 
 def get_auth_token():
     """تسجيل الدخول وجلب الـ Bearer Token"""
@@ -20,20 +29,19 @@ def get_auth_token():
         r = requests.post(login_url, json=payload, timeout=10)
         if r.status_code == 200:
             return r.json().get("token")
-        else:
-            print("Login Failed:", r.text)
-            return None
+        print("Login failed:", r.status_code, r.text)
+        return None
     except Exception as e:
-        print("Login Exception:", e)
+        print("Login error:", e)
         return None
 
 def fetch_domain_data(domain):
     token = get_auth_token()
     if not token:
-        return {"error": "Authentication Failed. Check password!"}
+        return {"status": "auth_error", "message": "Check SIA Username / Password in Render"}
 
-    # الرابط الرسمي للاستعلام عن الدومين
-    url = f"https://api.spamhaus.org/api/intel/v1/byobject/domain/{domain}"
+    # الرابط الصحيح الرسمي v2 للدومينات
+    url = f"https://api.spamhaus.org/api/intel/v2/byobject/domain/{domain}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json"
@@ -41,11 +49,26 @@ def fetch_domain_data(domain):
 
     try:
         r = requests.get(url, headers=headers, timeout=10)
+        
+        # إذا لقا المعطيات
         if r.status_code == 200:
-            return r.json()
-        return {"error": f"API returned status {r.status_code}"}
+            return {"status": "success", "data": r.json()}
+        
+        # إذا كان الدومين ما مسجلش فـ قاعدة بيانات السبام ديالهم (Clean)
+        elif r.status_code == 404:
+            return {"status": "clean", "data": {
+                "domain": domain,
+                "last-seen": None,
+                "tags": ["clean", "not_listed"],
+                "abused": False,
+                "score": 0,
+                "whois": {"registrar": "Not in Spamhaus DB / Clean"},
+                "clusters": {"auth": "N/A"}
+            }}
+        else:
+            return {"status": "error", "message": f"API error code {r.status_code}"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"status": "error", "message": str(e)}
 
 @app.route('/')
 def index():
@@ -62,27 +85,33 @@ def scan():
 
     for domain in domains:
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
-        sia_data = fetch_domain_data(clean)
+        res = fetch_domain_data(clean)
 
-        # إذا كانت الداتا جاية مباشرة من Spamhaus
-        if "error" not in sia_data:
+        if res["status"] in ["success", "clean"]:
+            d = res["data"]
+            whois_info = d.get("whois") or {}
+            
+            # استخراج المعطيات بنفس أسماء حقول Spamhaus الرسمية
             results.append({
                 "domain": clean,
-                "last_seen": sia_data.get("last_seen", "N/A"),
-                "tags": sia_data.get("tags", []),
-                "abused": sia_data.get("abused", False),
-                "whois": sia_data.get("whois", {}),
-                "score": sia_data.get("score", 0),
-                "clusters": sia_data.get("clusters", {}).get("auth", "N/A")
+                "last_seen": format_ts(d.get("last-seen")),
+                "tags": d.get("tags", []),
+                "abused": d.get("abused", False),
+                "whois": {
+                    "created": format_ts(whois_info.get("created")),
+                    "expires": format_ts(whois_info.get("expires")),
+                    "registrar": whois_info.get("registrar", "N/A")
+                },
+                "score": d.get("score", 0),
+                "clusters": (d.get("clusters") or {}).get("auth", "N/A")
             })
         else:
-            # إذا وقع مشكل فكلمة السر
             results.append({
                 "domain": clean,
                 "last_seen": "Error",
-                "tags": ["auth_error"],
+                "tags": ["error"],
                 "abused": False,
-                "whois": {"created": "N/A", "expires": "N/A", "registrar": sia_data["error"]},
+                "whois": {"created": "N/A", "expires": "N/A", "registrar": res["message"]},
                 "score": 0,
                 "clusters": "N/A"
             })
