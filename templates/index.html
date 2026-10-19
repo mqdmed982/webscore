@@ -16,6 +16,8 @@
         .table-custom td { font-size: 0.85rem; vertical-align: middle; }
         .col-filter { width: 100%; border: 1px solid #ced4da; border-radius: 3px; font-size: 0.8rem; padding: 2px 6px; color: #6c757d; }
         .btn-export { background-color: #f8f9fa; border: 1px solid #ced4da; color: #333; font-size: 0.8rem; padding: 3px 8px; }
+        .sub-list { list-style-type: disc; padding-left: 1.2rem; margin-bottom: 0; }
+        .hash-auth { font-family: monospace; font-size: 0.8rem; }
     </style>
 </head>
 <body class="p-3">
@@ -29,16 +31,16 @@
         <div class="card mb-3 shadow-sm border">
             <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
             <div class="card-body p-2">
-                <textarea id="domainInput" class="form-control" rows="3" placeholder="awsglobalaccelerator.com&#10;google.com">google.com</textarea>
+                <textarea id="domainInput" class="form-control" rows="3" placeholder="awsglobalaccelerator.com&#10;google.com">awsglobalaccelerator.com</textarea>
             </div>
         </div>
 
-        <!-- Radio Buttons -->
+        <!-- 8 Radio Buttons -->
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <div class="card h-100 p-3 shadow-sm border">
                     <h6 class="fw-bold mb-2">Basic Checks</h6>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general"> <label class="form-check-label" for="m_gen">General Overview</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general" checked> <label class="form-check-label" for="m_gen">General Overview</label></div>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_dim" value="reputation_dim"> <label class="form-check-label" for="m_dim">Reputation Dimensions</label></div>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ctx" value="domain_context"> <label class="form-check-label" for="m_ctx">Domain Context</label></div>
                 </div>
@@ -47,7 +49,7 @@
                 <div class="card h-100 p-3 shadow-sm border">
                     <h6 class="fw-bold mb-2">Reputation Insights</h6>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_bl" value="blacklist"> <label class="form-check-label" for="m_bl">Blacklist Listing</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_snd" value="domain_senders" checked> <label class="form-check-label" for="m_snd">Domain Senders</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_snd" value="domain_senders"> <label class="form-check-label" for="m_snd">Domain Senders</label></div>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_a" value="a_record"> <label class="form-check-label" for="m_a">A Record Reputation</label></div>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ns" value="ns_rep"> <label class="form-check-label" for="m_ns">Nameserver Reputation</label></div>
                     <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_host" value="hostnames"> <label class="form-check-label" for="m_host">Hostnames Listed</label></div>
@@ -63,7 +65,7 @@
 
         <!-- Table Container -->
         <div class="card shadow-sm border">
-            <div class="card-header-blue" id="tableHeaderLabel">Domain Senders</div>
+            <div class="card-header-blue" id="tableHeaderLabel">Domain - General</div>
             <div class="card-body p-3">
                 <div class="table-responsive">
                     <table id="resultsTable" class="table table-bordered table-custom w-100">
@@ -87,6 +89,92 @@
     <script>
         let dtInstance = null;
 
+        // إعدادات الأعمدة والعناوين لجميع الأزرار الـ 8
+        const TABLE_CONFIGS = {
+            general: {
+                title: "Domain - General",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
+                    { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d)}</code>` },
+                    { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : '<span class="text-secondary">false</span>' },
+                    { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${w.created || 'N/A'}</li><li><b>expires:</b> ${w.expires || 'N/A'}</li><li><b>registrar:</b> ${w.registrar || 'N/A'}</li></ul>` },
+                    { title: "Score", data: "score", defaultContent: "0" },
+                    { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c}</span></li></ul>` }
+                ]
+            },
+            reputation_dim: {
+                title: "Domain - Reputation Dimensions",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Score", data: "score", defaultContent: "0" },
+                    { title: "Email Threat", data: "email_threat", defaultContent: "Clean" },
+                    { title: "Web Threat", data: "web_threat", defaultContent: "Clean" },
+                    { title: "Phishing", data: "phishing", defaultContent: "Clean" },
+                    { title: "Malware", data: "malware", defaultContent: "Clean" }
+                ]
+            },
+            domain_context: {
+                title: "Domain - Domain Context",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Registrar", data: "registrar", defaultContent: "N/A" },
+                    { title: "Nameservers", data: "nameservers", defaultContent: "N/A" },
+                    { title: "Resolved IPs", data: "ips", defaultContent: "N/A" },
+                    { title: "ASN", data: "asn", defaultContent: "N/A" }
+                ]
+            },
+            blacklist: {
+                title: "Domain - Blacklist Listing",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "DBL", data: "dbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
+                    { title: "ZBL", data: "zbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
+                    { title: "Detection", data: "detection", defaultContent: "Clean" },
+                    { title: "Return Code", data: "code", defaultContent: "None" }
+                ]
+            },
+            domain_senders: {
+                title: "Domain Senders",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "IP", data: "ip", defaultContent: "N/A" },
+                    { title: "HELO", data: "helo", defaultContent: "None" },
+                    { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
+                    { title: "Score", data: "score", defaultContent: "0" }
+                ]
+            },
+            a_record: {
+                title: "Domain - A Record Reputation",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "A Record (IP)", data: "ip", defaultContent: "N/A" },
+                    { title: "PTR (Reverse DNS)", data: "ptr", defaultContent: "N/A" },
+                    { title: "IP Reputation", data: "ip_rep", defaultContent: "N/A" },
+                    { title: "Status", data: "status", defaultContent: "Active" }
+                ]
+            },
+            ns_rep: {
+                title: "Domain - Nameserver Reputation",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Primary NS", data: "primary_ns", defaultContent: "N/A" },
+                    { title: "NS IP", data: "ns_ip", defaultContent: "N/A" },
+                    { title: "NS Score", data: "ns_score", defaultContent: "0" },
+                    { title: "Status", data: "status", defaultContent: "Verified" }
+                ]
+            },
+            hostnames: {
+                title: "Domain - Hostnames Listed",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Hostname", data: "hostname", defaultContent: "N/A" },
+                    { title: "Record Type", data: "type", defaultContent: "CNAME" },
+                    { title: "Status", data: "status", defaultContent: "Clean" }
+                ]
+            }
+        };
+
         async function runAnalysis() {
             const inputVal = document.getElementById('domainInput').value.trim();
             if (!inputVal) return alert("المرجو إدخال دومين.");
@@ -104,7 +192,7 @@
                 });
                 const res = await response.json();
 
-                renderSendersTable(res.mode, res.data);
+                renderDynamicTable(res.mode, res.data);
             } catch (err) {
                 alert("وقع خطأ فـ الاتصال بالخادم.");
             } finally {
@@ -113,69 +201,25 @@
             }
         }
 
-        function renderSendersTable(mode, data) {
+        function renderDynamicTable(mode, data) {
+            const config = TABLE_CONFIGS[mode] || TABLE_CONFIGS['general'];
+
+            // تدمير الجدول القديم ومسحه بالكامل
             if (dtInstance) {
                 dtInstance.destroy();
                 $('#resultsTable').empty();
             }
 
-            let title = "Domain Senders";
-            let columns = [];
+            document.getElementById('tableHeaderLabel').innerText = config.title;
 
-            if (mode === 'domain_senders') {
-                title = "Domain Senders";
-                columns = [
-                    { title: "Domain", data: "domain" },
-                    { title: "IP", data: "ip" },
-                    { title: "HELO", data: "helo" },
-                    { title: "Last Seen", data: "last_seen" },
-                    { title: "Score", data: "score" }
-                ];
-            } else {
-                title = "Domain - General";
-                columns = [
-                    { title: "Domain", data: "domain" },
-                    { title: "Last Seen", data: "last_seen" },
-                    { title: "Tags", data: "tags", render: d => `<code>${JSON.stringify(d)}</code>` },
-                    { title: "Abused", data: "abused", render: d => d ? '<span class="text-danger">true</span>' : 'false' },
-                    { title: "Whois", data: "whois", render: w => `<ul><li>created: ${w.created}</li><li>expires: ${w.expires}</li><li>registrar: ${w.registrar}</li></ul>` },
-                    { title: "Score", data: "score" },
-                    { title: "Clusters", data: "clusters" }
-                ];
-            }
-
-            document.getElementById('tableHeaderLabel').innerText = title;
-
-            // بناء الرؤوس والـ Inputs التحتية لكل عمود
+            // توليد الـ Headers وخانات البحث تحت كل عمود
             let theadHtml = '<tr>';
-            columns.forEach(c => theadHtml += `<th>${c.title}</th>`);
+            config.columns.forEach(c => theadHtml += `<th>${c.title}</th>`);
             theadHtml += '</tr><tr class="filters">';
-            columns.forEach(c => theadHtml += `<th><input type="text" class="col-filter" placeholder="${c.title}" /></th>`);
+            config.columns.forEach(c => theadHtml += `<th><input type="text" class="col-filter" placeholder="${c.title}" /></th>`);
             theadHtml += '</tr>';
 
             $('#resultsTable').html(`<thead>${theadHtml}</thead><tbody></tbody>`);
 
-            dtInstance = $('#resultsTable').DataTable({
-                data: data,
-                columns: columns,
-                orderCellsTop: true,
-                dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
-                buttons: [{ extend: 'csvHtml5', text: 'Export CSV', className: 'btn btn-export' }],
-                initComplete: function () {
-                    var api = this.api();
-                    // تفعيل البحث لكل عمود
-                    api.columns().eq(0).each(function (colIdx) {
-                        $('input', $('.filters th')[colIdx]).on('keyup change', function () {
-                            api.column(colIdx).search(this.value).draw();
-                        });
-                    });
-                }
-            });
-        }
-
-        $(document).ready(() => {
-            runAnalysis();
-        });
-    </script>
-</body>
-</html>
+            // بناء الجدول بـ DataTables
+            dtInstance = $('#resultsTable').DataTabl
