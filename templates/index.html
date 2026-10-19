@@ -2,73 +2,139 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Domain & IP Intelligence Scanner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIA Tool - Threat Intelligence</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
 
     <style>
-        body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .header-title { color: #007bff; font-weight: 500; font-size: 1.4rem; display: flex; align-items: center; gap: 8px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8f9fa; }
+        .wrapper { display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Sidebar مثل الصورة */
+        .sidebar { width: 220px; background-color: #2b303a; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+        .sidebar-brand { padding: 18px 20px; font-size: 1.25rem; font-weight: 600; color: #e9ecef; border-bottom: 1px solid #3c424f; }
+        .sidebar-menu { list-style: none; padding: 15px 0; margin: 0; }
+        .sidebar-item { padding: 12px 20px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; color: #adb5bd; text-decoration: none; font-size: 0.95rem; }
+        .sidebar-item:hover { color: #fff; background-color: #353b47; }
+        .sidebar-item.active { color: #fff; background-color: #3b4252; font-weight: 500; border-left: 4px solid #007bff; }
+        .sidebar-item i { margin-right: 10px; font-size: 1.1rem; }
+        
+        .main-content { flex-grow: 1; overflow-y: auto; padding: 25px; }
         .card-header-blue { background-color: #007bff; color: #fff; font-weight: 500; padding: 0.6rem 1rem; border-radius: 4px 4px 0 0; }
         .table-custom th { background-color: #f8f9fa; font-size: 0.85rem; font-weight: 600; }
         .table-custom td { font-size: 0.85rem; vertical-align: middle; }
-        .col-filter { width: 100%; border: 1px solid #ced4da; border-radius: 3px; font-size: 0.8rem; padding: 2px 6px; color: #6c757d; }
-        .btn-export { background-color: #f8f9fa; border: 1px solid #ced4da; color: #333; font-size: 0.8rem; padding: 3px 8px; }
-        .sub-list { list-style-type: disc; padding-left: 1.2rem; margin-bottom: 0; }
-        .hash-auth { font-family: monospace; font-size: 0.8rem; }
+        .col-filter { width: 100%; border: 1px solid #ced4da; border-radius: 3px; font-size: 0.8rem; padding: 2px 6px; }
+        .btn-export { background-color: #f8f9fa; border: 1px solid #ced4da; color: #333; font-size: 0.8rem; }
     </style>
 </head>
-<body class="p-3">
-    <div class="container-fluid">
-        <div class="mb-3">
-            <div class="header-title"><i class="bi bi-globe"></i> Domain & IP Intelligence Scanner</div>
-            <div class="text-muted small">Enter domains or IP addresses below to analyze reputation, listing status, and infrastructure.</div>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar Navigation -->
+        <div class="sidebar">
+            <div class="sidebar-brand">SIA Tool</div>
+            <ul class="sidebar-menu">
+                <li>
+                    <a href="javascript:void(0)" class="sidebar-item active" id="menuDomains" onclick="switchTab('domains')">
+                        <span><i class="bi bi-globe"></i> Domains</span>
+                        <i class="bi bi-chevron-left small"></i>
+                    </a>
+                </li>
+                <li>
+                    <a href="javascript:void(0)" class="sidebar-item" id="menuIPs" onclick="switchTab('ips')">
+                        <span><i class="bi bi-diagram-3"></i> IPs</span>
+                        <i class="bi bi-chevron-left small"></i>
+                    </a>
+                </li>
+            </ul>
         </div>
 
-        <!-- Input Box -->
-        <div class="card mb-3 shadow-sm border">
-            <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Input (Domains or IPs)</strong></div>
-            <div class="card-body p-2">
-                <textarea id="domainInput" class="form-control" rows="3" placeholder="ryanair.analyvora.live&#10;1.1.1.1">ryanair.analyvora.live</textarea>
-            </div>
-        </div>
+        <!-- Main Body -->
+        <div class="main-content">
+            <!-- ================= SECTION 1: DOMAINS ================= -->
+            <div id="sectionDomains">
+                <div class="mb-3">
+                    <h4 class="text-primary fw-bold"><i class="bi bi-globe"></i> Domain Intelligence Scanner</h4>
+                    <div class="text-muted small">Enter domains below to analyze their reputation, listing status, and behavior across various datasets.</div>
+                </div>
 
-        <!-- Check Options -->
-        <div class="row g-3 mb-3">
-            <div class="col-md-6">
-                <div class="card h-100 p-3 shadow-sm border">
-                    <h6 class="fw-bold mb-2">Basic Checks</h6>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general" checked> <label class="form-check-label" for="m_gen">General Overview</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_dim" value="reputation_dim"> <label class="form-check-label" for="m_dim">Reputation Dimensions</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ctx" value="domain_context"> <label class="form-check-label" for="m_ctx">Domain Context</label></div>
+                <div class="card mb-3 shadow-sm border">
+                    <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
+                    <div class="card-body p-2">
+                        <textarea id="domainInput" class="form-control" rows="3" placeholder="awsglobalaccelerator.com">awsglobalaccelerator.com</textarea>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="card h-100 p-3 shadow-sm border">
+                            <h6 class="fw-bold mb-2">Basic Checks</h6>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general" checked> <label class="form-check-label" for="m_gen">General Overview</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_dim" value="reputation_dim"> <label class="form-check-label" for="m_dim">Reputation Dimensions</label></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100 p-3 shadow-sm border">
+                            <h6 class="fw-bold mb-2">Reputation Insights</h6>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_snd" value="domain_senders"> <label class="form-check-label" for="m_snd">Domain Senders</label></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-end mb-4">
+                    <button class="btn btn-primary px-4" id="btnAnalyzeDomain" onclick="runDomainAnalysis()">
+                        <i class="bi bi-search"></i> Analyze Domains
+                    </button>
+                </div>
+
+                <div class="card shadow-sm border">
+                    <div class="card-header-blue" id="domainTableHeader">Domain - General</div>
+                    <div class="card-body p-3">
+                        <div class="table-responsive" id="domainTableWrap"></div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card h-100 p-3 shadow-sm border">
-                    <h6 class="fw-bold mb-2">Reputation Insights</h6>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_bl" value="blacklist"> <label class="form-check-label" for="m_bl">Blacklist Listing</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_snd" value="domain_senders"> <label class="form-check-label" for="m_snd">Domain Senders</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ip" value="ip_rep"> <label class="form-check-label text-primary fw-bold" for="m_ip">IP Reputation (New)</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_a" value="a_record"> <label class="form-check-label" for="m_a">A Record Reputation</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ns" value="ns_rep"> <label class="form-check-label" for="m_ns">Nameserver Reputation</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_host" value="hostnames"> <label class="form-check-label" for="m_host">Hostnames Listed</label></div>
+
+            <!-- ================= SECTION 2: IPs & HISTORY ================= -->
+            <div id="sectionIPs" style="display: none;">
+                <div class="mb-3">
+                    <h4 class="text-primary fw-bold"><i class="bi bi-diagram-3"></i> IP Intelligence & Listing History</h4>
+                    <div class="text-muted small">Enter IP addresses to investigate their historical and live listings in Spamhaus datasets (XBL, SBL, PBL, CSS).</div>
                 </div>
-            </div>
-        </div>
 
-        <div class="text-end mb-4">
-            <button class="btn btn-primary px-4 shadow-sm" id="btnAnalyze" onclick="runAnalysis()">
-                <i class="bi bi-search"></i> Analyze
-            </button>
-        </div>
+                <div class="card mb-3 shadow-sm border">
+                    <div class="card-header bg-light py-2"><strong><i class="bi bi-hdd-network"></i> IP Address Input</strong></div>
+                    <div class="card-body p-2">
+                        <textarea id="ipInput" class="form-control" rows="3" placeholder="45.150.206.114&#10;1.1.1.1">45.150.206.114</textarea>
+                    </div>
+                </div>
 
-        <!-- Table Container -->
-        <div class="card shadow-sm border">
-            <div class="card-header-blue" id="tableHeaderLabel">Domain - General</div>
-            <div class="card-body p-3">
-                <div class="table-responsive" id="tableWrap"></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-12">
+                        <div class="card p-3 shadow-sm border">
+                            <h6 class="fw-bold mb-2">IP Intelligence Options</h6>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="ipMode" id="ip_m_hist" value="history" checked>
+                                <label class="form-check-label fw-bold text-primary" for="ip_m_hist">Listing History (Full Spamhaus Records)</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-end mb-4">
+                    <button class="btn btn-primary px-4" id="btnAnalyzeIP" onclick="runIPAnalysis()">
+                        <i class="bi bi-search"></i> Query IP History
+                    </button>
+                </div>
+
+                <div class="card shadow-sm border">
+                    <div class="card-header-blue">IP Intelligence - Listing History</div>
+                    <div class="card-body p-3">
+                        <div class="table-responsive" id="ipTableWrap"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -83,171 +149,129 @@
     <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
 
     <script>
-        let dtInstance = null;
+        function switchTab(tab) {
+            $('.sidebar-item').removeClass('active');
+            if (tab === 'domains') {
+                $('#menuDomains').addClass('active');
+                $('#sectionDomains').show();
+                $('#sectionIPs').hide();
+            } else {
+                $('#menuIPs').addClass('active');
+                $('#sectionDomains').hide();
+                $('#sectionIPs').show();
+                runIPAnalysis();
+            }
+        }
 
-        const CONFIGS = {
-            general: {
-                title: "Domain - General",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
-                    { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d || [])}</code>` },
-                    { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : '<span class="text-secondary">false</span>' },
-                    { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${(w && w.created) || 'N/A'}</li><li><b>expires:</b> ${(w && w.expires) || 'N/A'}</li><li><b>registrar:</b> ${(w && w.registrar) || 'N/A'}</li></ul>` },
-                    { title: "Score", data: "score", defaultContent: "0" },
-                    { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c || 'N/A'}</span></li></ul>` }
-                ]
-            },
-            ip_rep: {
-                title: "IP Reputation Insights",
-                columns: [
-                    { title: "Input Target", data: "target", defaultContent: "N/A" },
-                    { title: "Resolved IP", data: "resolved_ip", defaultContent: "N/A", render: ip => `<code>${ip}</code>` },
-                    { title: "Reverse DNS (PTR)", data: "ptr", defaultContent: "N/A" },
-                    { title: "SBL", data: "sbl", defaultContent: "Clean", render: s => s === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                    { title: "XBL (Botnet)", data: "xbl", defaultContent: "Clean", render: x => x === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                    { title: "PBL (Dialup/DHCP)", data: "pbl", defaultContent: "Clean", render: p => p === 'Listed' ? '<span class="badge bg-warning text-dark">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                    { title: "ASN", data: "asn", defaultContent: "N/A" },
-                    { title: "Score", data: "threat_score", defaultContent: "0" }
-                ]
-            },
-            reputation_dim: {
-                title: "Domain - Reputation Dimensions",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Score", data: "score", defaultContent: "0" },
-                    { title: "Email Threat", data: "email_threat", defaultContent: "Clean" },
-                    { title: "Web Threat", data: "web_threat", defaultContent: "Clean" },
-                    { title: "Phishing", data: "phishing", defaultContent: "Clean" },
-                    { title: "Malware", data: "malware", defaultContent: "Clean" }
-                ]
-            },
-            domain_context: {
-                title: "Domain - Domain Context",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Registrar", data: "registrar", defaultContent: "N/A" },
-                    { title: "Nameservers", data: "nameservers", defaultContent: "N/A" },
-                    { title: "Resolved IPs", data: "ips", defaultContent: "N/A" },
-                    { title: "ASN", data: "asn", defaultContent: "N/A" }
-                ]
-            },
-            blacklist: {
-                title: "Domain - Blacklist Listing",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "DBL", data: "dbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                    { title: "ZBL", data: "zbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                    { title: "Detection", data: "detection", defaultContent: "Clean" },
-                    { title: "Return Code", data: "code", defaultContent: "None" }
-                ]
-            },
-            domain_senders: {
-                title: "Domain Senders",
-                columns: [
+        // ================= DOMAINS LOGIC =================
+        async function runDomainAnalysis() {
+            const val = $('#domainInput').val().trim();
+            if(!val) return alert("المرجو إدخال دومين.");
+
+            const mode = $('input[name="scanType"]:checked').val();
+            const btn = $('#btnAnalyzeDomain');
+            btn.html('<span class="spinner-border spinner-border-sm"></span> Analyzing...').prop('disabled', true);
+
+            try {
+                const res = await fetch('/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ domains: val, mode: mode })
+                });
+                const json = await res.json();
+                renderDomainTable(json.mode, json.data || []);
+            } catch(e) {
+                renderDomainTable(mode, []);
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Analyze Domains').prop('disabled', false);
+            }
+        }
+
+        function renderDomainTable(mode, data) {
+            let title = "Domain - General";
+            let columns = [
+                { title: "Domain", data: "domain", defaultContent: "N/A" },
+                { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
+                { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d)}</code>` },
+                { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : 'false' },
+                { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul><li>created: ${w.created||'N/A'}</li><li>expires: ${w.expires||'N/A'}</li><li>registrar: ${w.registrar||'N/A'}</li></ul>` },
+                { title: "Score", data: "score", defaultContent: "0" },
+                { title: "Clusters", data: "clusters", defaultContent: "N/A" }
+            ];
+
+            if(mode === 'domain_senders') {
+                title = "Domain Senders";
+                columns = [
                     { title: "Domain", data: "domain", defaultContent: "N/A" },
                     { title: "IP", data: "ip", defaultContent: "N/A" },
                     { title: "HELO", data: "helo", defaultContent: "None" },
                     { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
                     { title: "Score", data: "score", defaultContent: "0" }
-                ]
-            },
-            a_record: {
-                title: "Domain - A Record Reputation",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "A Record (IP)", data: "ip", defaultContent: "N/A" },
-                    { title: "PTR (Reverse DNS)", data: "ptr", defaultContent: "N/A" },
-                    { title: "IP Reputation", data: "ip_rep", defaultContent: "N/A" },
-                    { title: "Status", data: "status", defaultContent: "Active" }
-                ]
-            },
-            ns_rep: {
-                title: "Domain - Nameserver Reputation",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Primary NS", data: "primary_ns", defaultContent: "N/A" },
-                    { title: "NS IP", data: "ns_ip", defaultContent: "N/A" },
-                    { title: "NS Score", data: "ns_score", defaultContent: "0" },
-                    { title: "Status", data: "status", defaultContent: "Verified" }
-                ]
-            },
-            hostnames: {
-                title: "Domain - Hostnames Listed",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Hostname", data: "hostname", defaultContent: "N/A" },
-                    { title: "Record Type", data: "type", defaultContent: "Observed" },
-                    { title: "Status", data: "status", defaultContent: "Clean" }
-                ]
+                ];
             }
-        };
 
-        async function runAnalysis() {
-            const inputVal = document.getElementById('domainInput').value.trim();
-            if (!inputVal) return alert("المرجو إدخال دومين أو IP.");
+            $('#domainTableHeader').text(title);
+            $('#domainTableWrap').html('<table id="domTable" class="table table-bordered table-custom w-100"><thead></thead><tbody></tbody></table>');
 
-            const selectedRadio = document.querySelector('input[name="scanType"]:checked');
-            const mode = selectedRadio ? selectedRadio.value : 'general';
-            const btn = document.getElementById('btnAnalyze');
-            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Analyzing...`;
-            btn.disabled = true;
+            let thead = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
+            $('#domTable thead').html(thead);
+
+            $('#domTable').DataTable({
+                data: data,
+                columns: columns,
+                dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
+                buttons: [{ extend: 'csvHtml5', text: 'Export CSV', className: 'btn btn-export' }]
+            });
+        }
+
+        // ================= IP HISTORY LOGIC =================
+        async function runIPAnalysis() {
+            const val = $('#ipInput').val().trim();
+            if(!val) return;
+
+            const btn = $('#btnAnalyzeIP');
+            btn.html('<span class="spinner-border spinner-border-sm"></span> Querying History...').prop('disabled', true);
 
             try {
-                const response = await fetch('/scan', {
+                const res = await fetch('/scan_ip', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ domains: inputVal, mode: mode })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ips: val, mode: 'history' })
                 });
-                const res = await response.json();
-                renderTable(res.mode, res.data || []);
-            } catch (err) {
-                console.error(err);
-                renderTable(mode, []);
+                const json = await res.json();
+                renderIPHistoryTable(json.data || []);
+            } catch(e) {
+                renderIPHistoryTable([]);
             } finally {
-                btn.innerHTML = `<i class="bi bi-search"></i> Analyze`;
-                btn.disabled = false;
+                btn.html('<i class="bi bi-search"></i> Query IP History').prop('disabled', false);
             }
         }
 
-        function renderTable(mode, data) {
-            const config = CONFIGS[mode] || CONFIGS['general'];
-            document.getElementById('tableHeaderLabel').innerText = config.title;
+        function renderIPHistoryTable(data) {
+            $('#ipTableWrap').html('<table id="ipTable" class="table table-bordered table-custom w-100"><thead></thead><tbody></tbody></table>');
 
-            $('#tableWrap').html(`
-                <table id="resultsTable" class="table table-bordered table-custom w-100">
-                    <thead></thead>
-                    <tbody></tbody>
-                </table>
-            `);
+            const columns = [
+                { title: "IP Address", data: "ip", render: d => `<code>${d}</code>` },
+                { title: "Dataset", data: "dataset", render: d => `<span class="badge bg-secondary">${d}</span>` },
+                { title: "First Seen", data: "first_seen" },
+                { title: "Last Seen", data: "last_seen" },
+                { title: "Status", data: "status", render: d => d === 'Listed' ? '<span class="badge bg-danger">Active (Listed)</span>' : '<span class="badge bg-success">Clean / Expired</span>' },
+                { title: "Threat Classification", data: "threat" }
+            ];
 
-            let theadHtml = '<tr>';
-            config.columns.forEach(c => theadHtml += `<th>${c.title}</th>`);
-            theadHtml += '</tr><tr class="filters">';
-            config.columns.forEach(c => theadHtml += `<th><input type="text" class="col-filter" placeholder="${c.title}" /></th>`);
-            theadHtml += '</tr>';
+            let thead = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
+            $('#ipTable thead').html(thead);
 
-            $('#resultsTable thead').html(theadHtml);
-
-            dtInstance = $('#resultsTable').DataTable({
+            $('#ipTable').DataTable({
                 data: data,
-                columns: config.columns,
-                orderCellsTop: true,
+                columns: columns,
                 dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
-                buttons: [{ extend: 'csvHtml5', text: 'Export CSV', className: 'btn btn-export' }],
-                initComplete: function () {
-                    var api = this.api();
-                    api.columns().eq(0).each(function (colIdx) {
-                        $('input', $('.filters th')[colIdx]).on('keyup change', function () {
-                            api.column(colIdx).search(this.value).draw();
-                        });
-                    });
-                }
+                buttons: [{ extend: 'csvHtml5', text: 'Export CSV', className: 'btn btn-export' }]
             });
         }
 
         $(document).ready(() => {
-            runAnalysis();
+            runDomainAnalysis();
         });
     </script>
 </body>
