@@ -10,11 +10,13 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
+# إعدادات حساب Spamhaus (يمكن وضعها في Environment Variables على Render)
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
 SIA_PASSWORD = os.getenv("SIA_PASSWORD", "")
 VT_API_KEY = os.getenv("VT_API_KEY", "")
 
 def format_ts(ts):
+    """تحويل Unix Timestamp لتاريخ YYYY-MM-DD HH:MM:SS"""
     if not ts or ts == "N/A":
         return "N/A"
     try:
@@ -22,7 +24,7 @@ def format_ts(ts):
     except Exception:
         return str(ts)
 
-# ================= AUTH & SPAMHAUS =================
+# ================= AUTH & SPAMHAUS CALLS =================
 def get_auth_token():
     login_url = "https://api.spamhaus.org/api/v1/login"
     payload = {"username": SIA_USERNAME, "password": SIA_PASSWORD, "realm": "intel"}
@@ -64,9 +66,8 @@ def fetch_ip_history(ip, token):
     except Exception:
         return []
 
-# ================= الدوال المساعدة للأعمدة الـ 8 الإضافية =================
+# ================= HELPER FUNCTIONS =================
 def compute_age_and_expiry(created_ts, expires_ts):
-    """حساب عمر الدومين وشحال باقي ويسالي"""
     now = datetime.utcnow().timestamp()
     age_str = "Unknown"
     expiry_str = "Unknown"
@@ -102,7 +103,6 @@ def compute_age_and_expiry(created_ts, expires_ts):
     return age_str, expiry_str, age_days
 
 def get_hosting_and_country(ip):
-    """معرفة الـ ASN والدولة وسيرفر الاستضافة مجاناً"""
     if not ip or ip == "N/A":
         return "Unknown ASN", "Unknown", ""
     try:
@@ -111,7 +111,6 @@ def get_hosting_and_country(ip):
             d = r.json()
             if d.get("status") == "success":
                 asn = d.get("as", d.get("org", "N/A"))
-                # تبسيط اسم الـ ASN
                 if len(asn) > 28:
                     asn = asn[:28] + "..."
                 return asn, d.get("country", "Unknown"), d.get("countryCode", "")
@@ -120,7 +119,6 @@ def get_hosting_and_country(ip):
     return "N/A", "Unknown", ""
 
 def detect_mx_provider(domain):
-    """معرفة مزود الإيميل (Google Workspace, Microsoft 365, etc.)"""
     try:
         ans = dns.resolver.resolve(domain, 'MX')
         hosts = " ".join([str(r.exchange).lower() for r in ans])
@@ -139,7 +137,6 @@ def detect_mx_provider(domain):
         return "No MX"
 
 def check_dmarc_protection(domain):
-    """كشف واش الإيميل محمي من التزوير DMARC"""
     try:
         ans = dns.resolver.resolve(f"_dmarc.{domain}", 'TXT')
         for r in ans:
@@ -157,7 +154,6 @@ def check_dmarc_protection(domain):
         return "Spoofable (No DMARC)"
 
 def check_http_live(domain):
-    """فحص واش الموقع حي وشغال دابا"""
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         r = requests.head(f"https://{domain}", timeout=2.5, allow_redirects=True, headers=headers)
@@ -173,7 +169,136 @@ def check_http_live(domain):
 def index():
     return render_template('index.html')
 
-# ================= 1. DOMAINS SCANNER (مع الأعمدة الـ 8 الإضافية) =================
+# ================= 1. UNIFIED ALL-SCORES ENGINE (جديد) =================
+@app.route('/scan_domain_all_scores', methods=['POST'])
+def scan_domain_all_scores():
+    data = request.get_json() or {}
+    domain = data.get('domain', '').strip().replace("https://", "").replace("http://", "").split("/")[0]
+
+    if not domain:
+        return jsonify({"error": "No domain provided"})
+
+    token = get_auth_token()
+    
+    # 1. Spamhaus Threat Score
+    sia_res = fetch_sia(f"{domain}", token) or {}
+    raw_score = sia_res.get("score", 0)
+    abused = sia_res.get("abused", False)
+    if abused: raw_score = max(raw_score, 85)
+    threat_status = "Critical (Abused)" if abused else ("High Threat" if raw_score >= 50 else ("Moderate" if raw_score >= 25 else "Clean"))
+
+    # 2. Email Deliverability Score (0-100)
+    deliv_score = 0
+    deliv_details = []
+    try:
+        txts = dns.resolver.resolve(domain, 'TXT')
+        if any("v=spf1" in r.to_text() for r in txts):
+            deliv_score += 25
+            deliv_details.append("SPF Valid")
+    except Exception: pass
+
+    try:
+        dmarc_txt = dns.resolver.resolve(f"_dmarc.{domain}", 'TXT')
+        for r in dmarc_txt:
+            txt = r.to_text()
+            if "v=DMARC1" in txt:
+                if "p=reject" in txt or "p=quarantine" in txt:
+                    deliv_score += 25
+                    deliv_details.append("DMARC Enforced")
+                else:
+                    deliv_score += 15
+                    deliv_details.append("DMARC Audit")
+                break
+    except Exception: pass
+
+    try:
+        mx_ans = dns.resolver.resolve(domain, 'MX')
+        if mx_ans:
+            deliv_score += 25
+            deliv_details.append("MX Active")
+        mx_ip = socket.gethostbyname(str(mx_ans[0].exchange).rstrip('.'))
+        if socket.gethostbyaddr(mx_ip)[0]:
+            deliv_score += 25
+            deliv_details.append("rDNS Valid")
+    except Exception: pass
+
+    # 3. Domain Age Trust Score (0-100)
+    whois_info = sia_res.get("whois") or {}
+    raw_created = whois_info.get("created")
+    age_score = 30
+    age_label = "Unknown Age"
+    if raw_created and raw_created != "N/A":
+        try:
+            days = (datetime.utcnow().timestamp() - int(raw_created)) / 86400
+            if days >= 1825:
+                age_score = 100
+                age_label = f"{round(days/365, 1)} Years (High Trust)"
+            elif days >= 365:
+                age_score = 80
+                age_label = f"{round(days/365, 1)} Years (Good Trust)"
+            elif days >= 90:
+                age_score = 50
+                age_label = f"{int(days)} Days (Moderate)"
+            else:
+                age_score = 15
+                age_label = f"{int(days)} Days (Fresh / Low Trust ⚠️)"
+        except Exception: pass
+
+    # 4. SSL Encryption Score (0-100)
+    ssl_score = 0
+    ssl_label = "No SSL"
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((domain, 443), timeout=3) as sock:
+            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
+                cert = ssock.getpeercert()
+                exp_date = datetime.strptime(cert['notAfter'], "%b %d %H:%M:%S %Y %Z")
+                days_left = (exp_date - datetime.utcnow()).days
+                if days_left > 30:
+                    ssl_score = 100
+                    ssl_label = f"Valid ({days_left} days left)"
+                elif days_left > 0:
+                    ssl_score = 60
+                    ssl_label = f"Expiring Soon ({days_left} days)"
+                else:
+                    ssl_score = 0
+                    ssl_label = "Expired"
+    except Exception: pass
+
+    # 5. IP Abuse Risk Score
+    ip_abuse_score = 5 if not abused else 85
+    ip_abuse_label = "Clean Hosting" if not abused else "High Abuse Host"
+
+    # 6. Global Composite Reputation Index (0-100)
+    spamhaus_health = max(0, 100 - int(raw_score * 1.2))
+    global_index = int((spamhaus_health * 0.35) + (deliv_score * 0.25) + (age_score * 0.20) + (ssl_score * 0.20))
+    global_index = max(5, min(100, global_index))
+
+    if global_index >= 80:
+        verdict = "EXCELLENT / HIGH REPUTATION"
+        verdict_badge = "success"
+    elif global_index >= 50:
+        verdict = "MODERATE / SUSPICIOUS"
+        verdict_badge = "warning text-dark"
+    else:
+        verdict = "CRITICAL / HIGH RISK"
+        verdict_badge = "danger"
+
+    return jsonify({
+        "domain": domain,
+        "global_index": global_index,
+        "verdict": verdict,
+        "verdict_badge": verdict_badge,
+        "scores": {
+            "spamhaus_threat": {"score": raw_score, "status": threat_status, "color": "danger" if raw_score >= 50 else ("warning" if raw_score >= 25 else "success")},
+            "email_deliverability": {"score": deliv_score, "status": f"{deliv_score}% Ready", "details": ", ".join(deliv_details) or "No Auth", "color": "success" if deliv_score >= 75 else ("warning" if deliv_score >= 40 else "danger")},
+            "domain_age_trust": {"score": age_score, "status": age_label, "color": "success" if age_score >= 80 else ("warning" if age_score >= 40 else "danger")},
+            "ssl_security": {"score": ssl_score, "status": ssl_label, "color": "success" if ssl_score >= 80 else "danger"},
+            "ip_abuse": {"score": ip_abuse_score, "status": ip_abuse_label, "color": "success" if ip_abuse_score < 30 else "danger"}
+        }
+    })
+
+# ================= 2. DOMAINS SCANNER (8 CHECKS + ENRICHED) =================
 @app.route('/scan', methods=['POST'])
 def scan_domains():
     try:
@@ -196,25 +321,18 @@ def scan_domains():
                 score = res.get("score", 0)
                 abused = res.get("abused", False)
 
-                # 1. حساب العمر وتاريخ الانتهاء
                 age_str, expiry_str, age_days = compute_age_and_expiry(raw_created, raw_expires)
 
-                # 2. جلب IP الدومين وموقعه وسيرفره
                 resolved_ip = "N/A"
                 try:
                     resolved_ip = socket.gethostbyname(clean)
-                except Exception:
-                    pass
+                except Exception: pass
                 asn_str, country_name, country_code = get_hosting_and_country(resolved_ip)
 
-                # 3. مزود الإيميل وحماية DMARC
                 mx_provider = detect_mx_provider(clean)
                 dmarc_status = check_dmarc_protection(clean)
-
-                # 4. حالة الموقع واش شغال
                 http_status = check_http_live(clean)
 
-                # 5. خلاصة الخطر (Risk Verdict)
                 if abused or score >= 60:
                     verdict = "Malicious / Toxic"
                 elif age_days < 45 or score >= 25 or "Spoofable" in dmarc_status:
@@ -302,7 +420,7 @@ def scan_domains():
         print("scan_domains error:", e)
         return jsonify({"mode": "general", "data": []})
 
-# ================= 2. IP ADDRESS DATA (17 COLUMNS) =================
+# ================= 3. IP ADDRESS DATA (17 COLUMNS) =================
 @app.route('/scan_ip', methods=['POST'])
 def scan_ips():
     try:
@@ -365,7 +483,7 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 3. MULTI-DNSBL BLACKLIST =================
+# ================= 4. MULTI-DNSBL BLACKLIST =================
 DNSBL_PROVIDERS = [
     {"name": "Spamhaus ZEN", "host": "zen.spamhaus.org"},
     {"name": "SpamCop", "host": "bl.spamcop.net"},
@@ -412,7 +530,7 @@ def scan_email_dnsbl():
 
     return jsonify({"data": results})
 
-# ================= 4. GOOGLE & YAHOO COMPLIANCE =================
+# ================= 5. GOOGLE & YAHOO COMPLIANCE =================
 @app.route('/scan_email_compliance', methods=['POST'])
 def scan_email_compliance():
     data = request.get_json() or {}
@@ -429,27 +547,24 @@ def scan_email_compliance():
                 if r.to_text().strip('"').startswith("v=spf1"):
                     has_spf = True
                     break
-        except Exception:
-            pass
+        except Exception: pass
 
         try:
             dmarc_txt = dns.resolver.resolve(f"_dmarc.{clean}", 'TXT')
             for r in dmarc_txt:
-                txt = r.to_text().strip('"')
+                txt = r.to_text()
                 if "v=DMARC1" in txt:
                     has_dmarc = True
                     dmarc_policy = "Reject (Strict)" if "p=reject" in txt else ("Quarantine" if "p=quarantine" in txt else "None (Monitor)")
                     break
-        except Exception:
-            pass
+        except Exception: pass
 
         for sel in ['google', 'k1', 'default', 's1', 'mail']:
             try:
                 if dns.resolver.resolve(f"{sel}._domainkey.{clean}", 'TXT'):
                     has_dkim = True
                     break
-            except Exception:
-                continue
+            except Exception: continue
 
         try:
             mx_ans = dns.resolver.resolve(clean, 'MX')
@@ -457,8 +572,7 @@ def scan_email_compliance():
             mx_ip = socket.gethostbyname(mx_server)
             if socket.gethostbyaddr(mx_ip)[0]:
                 has_ptr = True
-        except Exception:
-            pass
+        except Exception: pass
 
         score = (25 if has_spf else 0) + (25 if has_dmarc else 0) + (25 if has_dkim else 0) + (25 if has_ptr else 0)
         verdict = "PASS (Inbox Ready)" if (score == 100 and dmarc_policy != "None (Monitor)") else ("WARNING (Spam Risk)" if score >= 50 else "FAIL (Rejected)")
@@ -471,7 +585,7 @@ def scan_email_compliance():
 
     return jsonify({"data": results})
 
-# ================= 5. SMTP & PORT 25 HEALTH =================
+# ================= 6. SMTP & PORT 25 HEALTH =================
 @app.route('/scan_smtp_health', methods=['POST'])
 def scan_smtp_health():
     data = request.get_json() or {}
@@ -504,7 +618,7 @@ def scan_smtp_health():
 
     return jsonify({"data": results})
 
-# ================= 6. BIMI & MTA-STS =================
+# ================= 7. BIMI & MTA-STS =================
 @app.route('/scan_email_advanced', methods=['POST'])
 def scan_email_advanced():
     data = request.get_json() or {}
@@ -522,8 +636,7 @@ def scan_email_advanced():
                     bimi_status = "Active"
                     if "l=" in txt: bimi_logo = txt.split("l=")[1].split(";")[0]
                     break
-        except Exception:
-            pass
+        except Exception: pass
 
         mta_sts = "Missing"
         try:
@@ -532,8 +645,7 @@ def scan_email_advanced():
                 if "v=STSv1" in r.to_text():
                     mta_sts = "Enforced"
                     break
-        except Exception:
-            pass
+        except Exception: pass
 
         results.append({
             "domain": clean, "bimi": bimi_status, "bimi_logo": bimi_logo[:40] + "..." if len(bimi_logo) > 40 else bimi_logo,
@@ -542,7 +654,7 @@ def scan_email_advanced():
 
     return jsonify({"data": results})
 
-# ================= 7. SUBDOMAINS, SSL, VIRUSTOTAL =================
+# ================= 8. SUBDOMAINS, SSL, VIRUSTOTAL =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
@@ -557,8 +669,7 @@ def scan_subdomains():
                 h = item.get('hostname', '').lower().strip()
                 if h.endswith(domain) and h not in unique_subdomains:
                     unique_subdomains[h] = {"subdomain": h, "issuer": f"IP: {item.get('address', 'Active')}", "logged_at": item.get('last', 'Recent')[:10]}
-    except Exception:
-        pass
+    except Exception: pass
 
     try:
         r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=8)
@@ -569,8 +680,7 @@ def scan_subdomains():
                     if sub.endswith(domain) and sub not in unique_subdomains:
                         iss = entry.get('issuer_name', '').split('O=')[-1].split(',')[0].strip(' "') or "Trusted CA"
                         unique_subdomains[sub] = {"subdomain": sub, "issuer": iss, "logged_at": entry.get('entry_timestamp', 'Recent')[:10]}
-    except Exception:
-        pass
+    except Exception: pass
 
     if not unique_subdomains:
         for s in ["www", "mail", "api", "admin", "dev"]:
