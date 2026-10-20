@@ -10,11 +10,13 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
+# إعدادات حساب Spamhaus (يمكن وضعها في Environment Variables على Render)
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
 SIA_PASSWORD = os.getenv("SIA_PASSWORD", "")
 VT_API_KEY = os.getenv("VT_API_KEY", "")
 
 def format_ts(ts):
+    """تحويل Unix Timestamp لتاريخ YYYY-MM-DD HH:MM:SS"""
     if not ts or ts == "N/A":
         return "N/A"
     try:
@@ -22,7 +24,7 @@ def format_ts(ts):
     except Exception:
         return str(ts)
 
-# ================= AUTH & SPAMHAUS =================
+# ================= AUTH & SPAMHAUS CALLS =================
 def get_auth_token():
     login_url = "https://api.spamhaus.org/api/v1/login"
     payload = {"username": SIA_USERNAME, "password": SIA_PASSWORD, "realm": "intel"}
@@ -68,7 +70,7 @@ def fetch_ip_history(ip, token):
 def index():
     return render_template('index.html')
 
-# ================= 1. DOMAINS (SPAMHAUS) =================
+# ================= 1. DOMAINS (SPAMHAUS 8 BUTTONS) =================
 @app.route('/scan', methods=['POST'])
 def scan_domains():
     try:
@@ -155,7 +157,7 @@ def scan_domains():
     except Exception:
         return jsonify({"mode": "general", "data": []})
 
-# ================= 2. IP HISTORY =================
+# ================= 2. IP ADDRESS DATA (17 COLUMNS) =================
 @app.route('/scan_ip', methods=['POST'])
 def scan_ips():
     try:
@@ -175,31 +177,65 @@ def scan_ips():
                     target_ip = None
 
             if not target_ip:
-                results.append({"ip": clean, "dataset": "DNS Failed", "first_seen": "N/A", "last_seen": "N/A", "status": "Error", "threat": "Invalid Host/Domain"})
                 continue
 
             history_records = fetch_ip_history(target_ip, token) if token else []
+
             if history_records:
-                now_ts = datetime.utcnow().timestamp()
                 for rec in history_records:
-                    valid_until = rec.get("valid_until", 0)
-                    is_active = (valid_until and valid_until > now_ts) or rec.get("active", False)
+                    dst = "N/A"
+                    if rec.get("dst_ip"):
+                        dst = f"{rec.get('dst_ip')}:{rec.get('dst_port', '')}"
+                    elif rec.get("dst"):
+                        dst = str(rec.get("dst"))
+
+                    src = "N/A"
+                    if rec.get("src_ip"):
+                        src = f"{rec.get('src_ip')}:{rec.get('src_port', '')}"
+                    elif rec.get("src"):
+                        src = str(rec.get("src"))
+
+                    lat_lon = "N/A"
+                    if rec.get("lat") and rec.get("lon"):
+                        lat_lon = f"{rec.get('lat')}, {rec.get('lon')}"
+                    elif rec.get("location"):
+                        lat_lon = str(rec.get("location"))
+
                     results.append({
-                        "ip": target_ip,
-                        "dataset": rec.get("dataset", "XBL/SBL"),
-                        "first_seen": format_ts(rec.get("listed") or rec.get("first-seen") or rec.get("timestamp")),
-                        "last_seen": format_ts(rec.get("seen") or rec.get("last-seen")),
-                        "status": "Active (Listed)" if is_active else "Expired (Clean)",
-                        "threat": f"Listed in {rec.get('dataset', 'Spamhaus')} (ASN: {rec.get('asn', 'N/A')})"
+                        "ipaddress": rec.get("ipaddress") or target_ip,
+                        "dataset": rec.get("dataset", "N/A"),
+                        "asn": rec.get("asn", "N/A"),
+                        "cc": rec.get("cc", "N/A"),
+                        "listed": format_ts(rec.get("listed") or rec.get("first-seen")),
+                        "seen": format_ts(rec.get("seen") or rec.get("last-seen")),
+                        "valid_until": format_ts(rec.get("valid_until")),
+                        "rule": rec.get("rule", "N/A"),
+                        "botname": rec.get("botname") or rec.get("threat_name", "N/A"),
+                        "malpedia": rec.get("malpedia", "N/A"),
+                        "detection": rec.get("detection", "N/A"),
+                        "dst_ip_port": dst,
+                        "heuristic": rec.get("heuristic", "N/A"),
+                        "lat_lon": lat_lon,
+                        "protocol": rec.get("protocol", "N/A"),
+                        "src_ip_port": src,
+                        "helo": rec.get("helo", "N/A")
                     })
             else:
-                results.append({"ip": target_ip, "dataset": "ALL", "first_seen": "N/A", "last_seen": "Not Observed", "status": "Clean", "threat": "No Historical Listings"})
+                results.append({
+                    "ipaddress": target_ip,
+                    "dataset": "Clean",
+                    "asn": "N/A", "cc": "N/A", "listed": "N/A", "seen": "N/A", "valid_until": "N/A",
+                    "rule": "N/A", "botname": "N/A", "malpedia": "N/A", "detection": "Clean Dataset",
+                    "dst_ip_port": "N/A", "heuristic": "N/A", "lat_lon": "N/A", "protocol": "N/A",
+                    "src_ip_port": "N/A", "helo": "N/A"
+                })
 
         return jsonify({"data": results})
-    except Exception:
+    except Exception as e:
+        print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 3. EMAIL SUITE: MULTI-DNSBL BLACKLIST =================
+# ================= 3. MULTI-DNSBL BLACKLIST =================
 DNSBL_PROVIDERS = [
     {"name": "Spamhaus ZEN", "host": "zen.spamhaus.org"},
     {"name": "SpamCop", "host": "bl.spamcop.net"},
@@ -220,7 +256,6 @@ def scan_email_dnsbl():
     if not target:
         return jsonify({"data": []})
 
-    # إيجاد عنوان الـ IP (إما مباشرة أو عبر الـ MX Server للدومين)
     target_ip = target
     if not re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", target):
         try:
@@ -234,9 +269,8 @@ def scan_email_dnsbl():
                 target_ip = None
 
     if not target_ip:
-        return jsonify({"data": [{"dnsbl": "DNS Error", "target": target, "ip": "Resolution Failed", "status": "Error", "details": "Could not resolve MX or A record"}]})
+        return jsonify({"data": [{"dnsbl": "DNS Resolution", "target": target, "ip": "Failed", "status": "Error", "details": "Could not resolve IP"}]})
 
-    # عكس الـ Octets ديال الـ IP للفحص (e.g. 1.2.3.4 -> 4.3.2.1)
     rev_ip = '.'.join(reversed(target_ip.split('.')))
 
     for prov in DNSBL_PROVIDERS:
@@ -248,7 +282,7 @@ def scan_email_dnsbl():
                 "target": target,
                 "ip": target_ip,
                 "status": "Listed (Bad)",
-                "details": f"Flagged in {prov['host']}"
+                "details": f"Listed in {prov['host']}"
             })
         except dns.resolver.NXDOMAIN:
             results.append({
@@ -256,7 +290,7 @@ def scan_email_dnsbl():
                 "target": target,
                 "ip": target_ip,
                 "status": "Clean",
-                "details": "Not Listed (Good)"
+                "details": "Not Listed"
             })
         except Exception:
             results.append({
@@ -269,7 +303,7 @@ def scan_email_dnsbl():
 
     return jsonify({"data": results})
 
-# ================= 4. EMAIL SUITE: GOOGLE & YAHOO 2024+ COMPLIANCE =================
+# ================= 4. GOOGLE & YAHOO COMPLIANCE =================
 @app.route('/scan_email_compliance', methods=['POST'])
 def scan_email_compliance():
     data = request.get_json() or {}
@@ -278,15 +312,12 @@ def scan_email_compliance():
 
     for domain in domains:
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
-        
         has_spf = False
         has_dmarc = False
         dmarc_policy = "None"
         has_dkim = False
         has_ptr = False
-        mx_server = "N/A"
 
-        # 1. SPF Check
         try:
             txt_records = dns.resolver.resolve(clean, 'TXT')
             for r in txt_records:
@@ -297,7 +328,6 @@ def scan_email_compliance():
         except Exception:
             pass
 
-        # 2. DMARC Check
         try:
             dmarc_txt = dns.resolver.resolve(f"_dmarc.{clean}", 'TXT')
             for r in dmarc_txt:
@@ -314,41 +344,25 @@ def scan_email_compliance():
         except Exception:
             pass
 
-        # 3. DKIM Check (فحص أشهر الـ Selectors)
-        common_selectors = ['google', 'k1', 'default', 's1', 'mail', 'selector1']
-        for sel in common_selectors:
+        for sel in ['google', 'k1', 'default', 's1', 'mail']:
             try:
-                dkim_txt = dns.resolver.resolve(f"{sel}._domainkey.{clean}", 'TXT')
-                if dkim_txt:
+                if dns.resolver.resolve(f"{sel}._domainkey.{clean}", 'TXT'):
                     has_dkim = True
                     break
             except Exception:
                 continue
 
-        # 4. MX & rDNS (PTR)
         try:
             mx_ans = dns.resolver.resolve(clean, 'MX')
             mx_server = str(mx_ans[0].exchange).rstrip('.')
             mx_ip = socket.gethostbyname(mx_server)
-            ptr_name = socket.gethostbyaddr(mx_ip)[0]
-            if ptr_name:
+            if socket.gethostbyaddr(mx_ip)[0]:
                 has_ptr = True
         except Exception:
             pass
 
-        # حساب النتيجة الإجمالية (Verdict)
-        score = 0
-        if has_spf: score += 25
-        if has_dmarc: score += 25
-        if has_dkim: score += 25
-        if has_ptr: score += 25
-
-        if score == 100 and dmarc_policy != "None (Monitor)":
-            verdict = "PASS (Inbox Ready)"
-        elif score >= 50:
-            verdict = "WARNING (Spam Risk)"
-        else:
-            verdict = "FAIL (Rejected / Spoofable)"
+        score = (25 if has_spf else 0) + (25 if has_dmarc else 0) + (25 if has_dkim else 0) + (25 if has_ptr else 0)
+        verdict = "PASS (Inbox Ready)" if (score == 100 and dmarc_policy != "None (Monitor)") else ("WARNING (Spam Risk)" if score >= 50 else "FAIL (Rejected)")
 
         results.append({
             "domain": clean,
@@ -362,7 +376,7 @@ def scan_email_compliance():
 
     return jsonify({"data": results})
 
-# ================= 5. EMAIL SUITE: SMTP & STARTTLS HEALTH =================
+# ================= 5. SMTP & PORT 25 HEALTH =================
 @app.route('/scan_smtp_health', methods=['POST'])
 def scan_smtp_health():
     data = request.get_json() or {}
@@ -375,45 +389,28 @@ def scan_smtp_health():
             mx_ans = dns.resolver.resolve(clean, 'MX')
             mx_host = str(mx_ans[0].exchange).rstrip('.')
         except Exception:
-            results.append({
-                "domain": clean, "mx_host": "No MX Record", "banner": "N/A",
-                "starttls": "No", "latency": "Timeout", "status": "Failed"
-            })
+            results.append({"domain": clean, "mx_host": "No MX", "banner": "N/A", "starttls": "No", "latency": "Timeout", "status": "Failed"})
             continue
 
-        # فحص الاتصال بالـ Port 25
         start_t = time.time()
         try:
             with socket.create_connection((mx_host, 25), timeout=5) as sock:
                 banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
                 latency = int((time.time() - start_t) * 1000)
-
-                # فحص STARTTLS
                 sock.send(b"EHLO test.com\r\n")
                 ehlo_resp = sock.recv(2048).decode('utf-8', errors='ignore')
                 has_starttls = "STARTTLS" in ehlo_resp.upper()
-
                 results.append({
-                    "domain": clean,
-                    "mx_host": mx_host,
-                    "banner": banner[:35] + "...",
+                    "domain": clean, "mx_host": mx_host, "banner": banner[:35] + "...",
                     "starttls": "Supported (TLS)" if has_starttls else "Not Supported",
-                    "latency": f"{latency} ms",
-                    "status": "Healthy"
+                    "latency": f"{latency} ms", "status": "Healthy"
                 })
         except Exception:
-            results.append({
-                "domain": clean,
-                "mx_host": mx_host,
-                "banner": "Connection Blocked / Filtered",
-                "starttls": "Unknown",
-                "latency": "Timeout",
-                "status": "Port 25 Closed"
-            })
+            results.append({"domain": clean, "mx_host": mx_host, "banner": "Connection Blocked", "starttls": "Unknown", "latency": "Timeout", "status": "Closed"})
 
     return jsonify({"data": results})
 
-# ================= 6. EMAIL SUITE: ADVANCED PROTOCOLS (BIMI & MTA-STS) =================
+# ================= 6. BIMI & MTA-STS =================
 @app.route('/scan_email_advanced', methods=['POST'])
 def scan_email_advanced():
     data = request.get_json() or {}
@@ -422,9 +419,7 @@ def scan_email_advanced():
 
     for domain in domains:
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
-        
-        bimi_status = "Not Found"
-        bimi_logo = "None"
+        bimi_status, bimi_logo = "Not Found", "None"
         try:
             bimi_txt = dns.resolver.resolve(f"default._bimi.{clean}", 'TXT')
             for r in bimi_txt:
@@ -457,24 +452,18 @@ def scan_email_advanced():
 
     return jsonify({"data": results})
 
-# ================= 7. SUBDOMAINS, SSL & VIRUSTOTAL =================
+# ================= 7. SUBDOMAINS, SSL, VIRUSTOTAL =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
     domain = data.get('domain', '').strip().replace("https://", "").replace("http://", "").split("/")[0]
     unique_subdomains = {}
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36", "Accept": "application/json"}
 
     try:
-        otx_url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
-        r_otx = requests.get(otx_url, headers=headers, timeout=6)
+        r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
         if r_otx.status_code == 200:
-            pdns = r_otx.json().get('passive_dns', [])
-            for item in pdns:
+            for item in r_otx.json().get('passive_dns', []):
                 h = item.get('hostname', '').lower().strip()
                 if h.endswith(domain) and h not in unique_subdomains:
                     unique_subdomains[h] = {"subdomain": h, "issuer": f"IP: {item.get('address', 'Active')}", "logged_at": item.get('last', 'Recent')[:10]}
@@ -482,8 +471,7 @@ def scan_subdomains():
         pass
 
     try:
-        crt_url = f"https://crt.sh/?q=%.{domain}&output=json"
-        r_crt = requests.get(crt_url, headers=headers, timeout=8)
+        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=8)
         if r_crt.status_code == 200:
             for entry in r_crt.json():
                 for sub in entry.get('name_value', '').lower().split('\n'):
@@ -516,10 +504,7 @@ def scan_ssl():
                     exp_date = datetime.strptime(cert['notAfter'], "%b %d %H:%M:%S %Y %Z")
                     days_left = (exp_date - datetime.utcnow()).days
                     issuer = dict(x[0] for x in cert['issuer']).get('organizationName', 'Trusted CA')
-                    results.append({
-                        "domain": clean, "issuer": issuer, "valid_to": exp_date.strftime("%Y-%m-%d"),
-                        "days_left": f"{days_left} days", "status": "Valid" if days_left > 0 else "Expired"
-                    })
+                    results.append({"domain": clean, "issuer": issuer, "valid_to": exp_date.strftime("%Y-%m-%d"), "days_left": f"{days_left} days", "status": "Valid" if days_left > 0 else "Expired"})
         except Exception:
             results.append({"domain": clean, "issuer": "N/A", "valid_to": "Failed", "days_left": "0", "status": "No SSL"})
 
@@ -530,11 +515,9 @@ def scan_virustotal():
     data = request.get_json() or {}
     domains = [d.strip() for d in data.get('domains', '').split('\n') if d.strip()]
     results = []
-
     for domain in domains:
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
         results.append({"domain": clean, "malicious": "0 Engines", "suspicious": 0, "harmless": 72, "status": "Clean"})
-
     return jsonify({"data": results})
 
 if __name__ == '__main__':
