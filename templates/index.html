@@ -34,7 +34,6 @@
         .hash-auth { font-family: monospace; font-size: 0.8rem; }
         .tab-section { display: none; }
         .tab-section.active { display: block; }
-        /* الشريط الأخضر للجدول مثل الصورة */
         .card-top-green { border-top: 3px solid #28a745 !important; }
     </style>
 </head>
@@ -110,7 +109,7 @@
 
         <!-- Main Body -->
         <div class="main-content">
-            <!-- 1. TAB: DOMAINS (بجميع أزراره الـ 8) -->
+            <!-- 1. TAB: DOMAINS (الجدول الشامل مع الأعمدة الـ 8 الإضافية) -->
             <div id="tabDomains" class="tab-section active">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-globe"></i> Domain Intelligence Scanner</h4>
@@ -119,14 +118,14 @@
 
                 <div class="card mb-3 shadow-sm border">
                     <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
-                    <div class="card-body p-2"><textarea id="domainInput" class="form-control" rows="3">awsglobalaccelerator.com</textarea></div>
+                    <div class="card-body p-2"><textarea id="domainInput" class="form-control" rows="3">awsglobalaccelerator.com&#10;google.com</textarea></div>
                 </div>
 
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <div class="card h-100 p-3 shadow-sm border">
                             <h6 class="fw-bold mb-2">Basic Checks</h6>
-                            <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general" checked><label class="form-check-label" for="m_gen">General Overview</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_gen" value="general" checked><label class="form-check-label fw-bold text-primary" for="m_gen">General Overview (Enriched with 8 Insights)</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_dim" value="reputation_dim"><label class="form-check-label" for="m_dim">Reputation Dimensions</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="scanType" id="m_ctx" value="domain_context"><label class="form-check-label" for="m_ctx">Domain Context</label></div>
                         </div>
@@ -150,12 +149,12 @@
                 </div>
 
                 <div class="card shadow-sm border">
-                    <div class="card-header-blue" id="domainTableHeader">Domain - General</div>
+                    <div class="card-header-blue" id="domainTableHeader">Domain - General Overview</div>
                     <div class="card-body p-3"><div class="table-responsive" id="domainTableWrap"></div></div>
                 </div>
             </div>
 
-            <!-- 2. TAB: IP ADDRESS DATA (مطابق للصورة تماماً) -->
+            <!-- 2. TAB: IP ADDRESS DATA (17 COLUMNS) -->
             <div id="tabIPs" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-diagram-3"></i> IP Intelligence & Listing History</h4>
@@ -167,7 +166,6 @@
                 </div>
                 <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runIPAnalysis()"><i class="bi bi-search"></i> Query IP History</button></div>
 
-                <!-- جدول IP Address Data بالخط الأخضر و 17 عمود و CSV/PDF -->
                 <div class="card shadow-sm border card-top-green">
                     <div class="card-body p-3">
                         <h6 class="fw-bold mb-3"><i class="bi bi-table"></i> IP Address Data</h6>
@@ -317,8 +315,15 @@
             $('#' + tabId).addClass('active');
         }
 
-        function createDataTable(wrapperId, tableId, columns, data) {
-            $('#' + wrapperId).html(`<table id="${tableId}" class="table table-bordered table-custom w-100"><thead></thead><tbody></tbody></table>`);
+        // دالة تحويل رمز الدولة إلى علم إيموجي (e.g. US -> 🇺🇸)
+        function getFlagEmoji(countryCode) {
+            if (!countryCode || countryCode.length !== 2) return '';
+            const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
+            return String.fromCodePoint(...codePoints) + ' ';
+        }
+
+        function createDataTable(wrapperId, tableId, columns, data, isScrollX = false) {
+            $('#' + wrapperId).html(`<table id="${tableId}" class="table table-bordered table-custom w-100 nowrap"><thead></thead><tbody></tbody></table>`);
             let thead = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
             thead += '<tr class="filters">' + columns.map(c => `<th><input type="text" class="col-filter" placeholder="${c.title}" /></th>`).join('') + '</tr>';
             $(`#${tableId} thead`).html(thead);
@@ -327,6 +332,7 @@
                 data: data,
                 columns: columns,
                 orderCellsTop: true,
+                scrollX: isScrollX,
                 dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
                 buttons: [{ extend: 'csvHtml5', text: 'CSV', className: 'btn btn-export' }],
                 initComplete: function () {
@@ -340,17 +346,68 @@
             });
         }
 
-        // ================= 1. DOMAINS LOGIC =================
+        // ================= 1. DOMAINS CONFIG (مع الأعمدة الـ 8 الإضافية) =================
         const DOMAIN_CONFIGS = {
             general: {
-                title: "Domain - General",
+                title: "Domain - General Overview (Enriched with 8 Insights)",
                 columns: [
                     { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
+                    { 
+                        title: "Risk Verdict", 
+                        data: "verdict", 
+                        defaultContent: "Clean",
+                        render: v => {
+                            if (v.includes('Malicious')) return `<span class="badge bg-danger">${v}</span>`;
+                            if (v.includes('Suspicious')) return `<span class="badge bg-warning text-dark">${v}</span>`;
+                            return `<span class="badge bg-success">${v}</span>`;
+                        }
+                    },
+                    { 
+                        title: "Domain Age", 
+                        data: "domain_age", 
+                        defaultContent: "N/A",
+                        render: a => a.includes('Fresh') ? `<span class="badge bg-danger">${a}</span>` : `<span class="badge bg-info text-dark">${a}</span>`
+                    },
+                    { 
+                        title: "Expires In", 
+                        data: "expires_in", 
+                        defaultContent: "N/A",
+                        render: e => e.includes('⚠️') ? `<span class="text-danger fw-bold">${e}</span>` : `<span class="text-secondary">${e}</span>`
+                    },
+                    { 
+                        title: "HTTP Status", 
+                        data: "http_status", 
+                        defaultContent: "N/A",
+                        render: s => s.includes('200') ? `<span class="badge bg-success">${s}</span>` : `<span class="badge bg-secondary">${s}</span>`
+                    },
+                    { title: "Hosting / ASN", data: "hosting_asn", defaultContent: "N/A" },
+                    { 
+                        title: "Country", 
+                        data: "country", 
+                        defaultContent: "N/A",
+                        render: (c, type, row) => `${getFlagEmoji(row.country_code)}${c}`
+                    },
+                    { 
+                        title: "MX Provider", 
+                        data: "mx_provider", 
+                        defaultContent: "N/A",
+                        render: m => {
+                            if (m.includes('Google')) return `<span class="badge bg-primary">${m}</span>`;
+                            if (m.includes('Microsoft')) return `<span class="badge bg-info text-dark">${m}</span>`;
+                            if (m === 'No MX') return `<span class="badge bg-secondary">No MX</span>`;
+                            return `<span class="badge bg-dark">${m}</span>`;
+                        }
+                    },
+                    { 
+                        title: "DMARC", 
+                        data: "dmarc_protection", 
+                        defaultContent: "N/A",
+                        render: d => d.includes('Protected') ? `<span class="badge bg-success">${d}</span>` : `<span class="badge bg-danger">${d}</span>`
+                    },
                     { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d || [])}</code>` },
                     { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : '<span class="text-secondary">false</span>' },
+                    { title: "SIA Score", data: "score", defaultContent: "0" },
                     { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${(w && w.created) || 'N/A'}</li><li><b>expires:</b> ${(w && w.expires) || 'N/A'}</li><li><b>registrar:</b> ${(w && w.registrar) || 'N/A'}</li></ul>` },
-                    { title: "Score", data: "score", defaultContent: "0" },
                     { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c || 'N/A'}</span></li></ul>` }
                 ]
             },
@@ -435,7 +492,8 @@
 
             const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val, mode: mode }) });
             const json = await res.json();
-            createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || []);
+            // تفعيل التمرير الأفقي scrollX لـ General Mode لأنه يحتوي على أعمدة ثرية
+            createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || [], mode === 'general');
         }
 
         // ================= 2. IP ADDRESS DATA (17 COLUMNS + PDF/CSV) =================
