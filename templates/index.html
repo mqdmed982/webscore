@@ -35,6 +35,11 @@
         .tab-section { display: none; }
         .tab-section.active { display: block; }
         .card-top-green { border-top: 3px solid #28a745 !important; }
+        
+        /* Styles for Unified All-Scores Hub */
+        .score-hero { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fff; border-radius: 8px; padding: 25px; }
+        .score-circle { width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
+        .score-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; height: 100%; }
     </style>
 </head>
 <body>
@@ -56,6 +61,12 @@
                     <a href="javascript:void(0)" class="sidebar-item" onclick="showTab('tabIPs', this)">
                         <span><i class="bi bi-diagram-3"></i> IP Address Data</span>
                         <i class="bi bi-chevron-right small"></i>
+                    </a>
+                </li>
+                <li>
+                    <a href="javascript:void(0)" class="sidebar-item" onclick="showTab('tabAllScores', this)">
+                        <span><i class="bi bi-speedometer2 text-warning"></i> All Domain Scores</span>
+                        <span class="badge bg-warning text-dark small">New</span>
                     </a>
                 </li>
 
@@ -109,7 +120,7 @@
 
         <!-- Main Body -->
         <div class="main-content">
-            <!-- 1. TAB: DOMAINS (الجدول الشامل مع الأعمدة الـ 8 الإضافية) -->
+            <!-- 1. TAB: DOMAINS (8 CHECKS + ENRICHED) -->
             <div id="tabDomains" class="tab-section active">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-globe"></i> Domain Intelligence Scanner</h4>
@@ -154,7 +165,122 @@
                 </div>
             </div>
 
-            <!-- 2. TAB: IP ADDRESS DATA (17 COLUMNS) -->
+            <!-- 2. TAB: ALL DOMAIN SCORES (جديد) -->
+            <div id="tabAllScores" class="tab-section">
+                <div class="mb-3">
+                    <h4 class="text-primary fw-bold"><i class="bi bi-speedometer2"></i> Unified Domain Scoring Hub</h4>
+                    <div class="text-muted small">Calculate and inspect all threat, deliverability, security, and trust scores for a domain in one unified scorecard.</div>
+                </div>
+
+                <div class="card mb-4 shadow-sm border">
+                    <div class="card-header bg-light py-2"><strong>Target Domain</strong></div>
+                    <div class="card-body p-3">
+                        <div class="input-group">
+                            <input type="text" id="allScoreDomainInput" class="form-control" value="google.com" placeholder="example.com">
+                            <button class="btn btn-primary px-4" id="btnCalculateScores" onclick="runAllScoresAnalysis()">
+                                <i class="bi bi-calculator"></i> Calculate All Scores
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result Scorecard Container -->
+                <div id="scoresResultWrap" style="display: none;">
+                    <!-- Hero Card: Global Index -->
+                    <div class="score-hero mb-4 d-flex flex-wrap align-items-center justify-content-between shadow">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="score-circle bg-primary" id="heroScoreVal">94</div>
+                            <div>
+                                <h3 class="mb-1 fw-bold" id="heroDomainName">google.com</h3>
+                                <p class="mb-0 text-white-50">Global Composite Reputation Index</p>
+                            </div>
+                        </div>
+                        <div class="mt-3 mt-md-0">
+                            <span class="badge fs-6 px-3 py-2" id="heroVerdictBadge">EXCELLENT</span>
+                        </div>
+                    </div>
+
+                    <!-- 5 Score Breakdown Cards -->
+                    <div class="row g-3">
+                        <!-- 1. Spamhaus Threat Score -->
+                        <div class="col-md-4">
+                            <div class="score-card shadow-sm">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0"><i class="bi bi-shield-shaded text-danger"></i> Spamhaus Threat</h6>
+                                    <span class="badge bg-secondary" id="valSpamhausStatus">Clean</span>
+                                </div>
+                                <h4 class="fw-bold mb-2" id="valSpamhausNum">0 <span class="fs-6 text-muted">/ 100</span></h4>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-danger" id="progSpamhaus" style="width: 0%;"></div>
+                                </div>
+                                <small class="text-muted mt-2 d-block">Lower score is safer (Spamhaus SIA).</small>
+                            </div>
+                        </div>
+
+                        <!-- 2. Email Deliverability Score -->
+                        <div class="col-md-4">
+                            <div class="score-card shadow-sm">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0"><i class="bi bi-envelope-check text-success"></i> Email Deliverability</h6>
+                                    <span class="badge bg-success" id="valDelivStatus">100% Ready</span>
+                                </div>
+                                <h4 class="fw-bold mb-2" id="valDelivNum">100%</h4>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-success" id="progDeliv" style="width: 100%;"></div>
+                                </div>
+                                <small class="text-muted mt-2 d-block" id="valDelivDetails">SPF, DMARC, MX, rDNS</small>
+                            </div>
+                        </div>
+
+                        <!-- 3. Domain Age Trust Score -->
+                        <div class="col-md-4">
+                            <div class="score-card shadow-sm">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0"><i class="bi bi-hourglass-split text-info"></i> Domain Age Trust</h6>
+                                    <span class="badge bg-info text-dark" id="valAgeStatus">High Trust</span>
+                                </div>
+                                <h4 class="fw-bold mb-2" id="valAgeNum">100 <span class="fs-6 text-muted">/ 100</span></h4>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-info" id="progAge" style="width: 100%;"></div>
+                                </div>
+                                <small class="text-muted mt-2 d-block">Calculated from WHOIS creation date.</small>
+                            </div>
+                        </div>
+
+                        <!-- 4. SSL & Security Score -->
+                        <div class="col-md-6">
+                            <div class="score-card shadow-sm">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0"><i class="bi bi-lock text-primary"></i> SSL & Encryption Health</h6>
+                                    <span class="badge bg-primary" id="valSSLStatus">Valid</span>
+                                </div>
+                                <h4 class="fw-bold mb-2" id="valSSLNum">100%</h4>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" id="progSSL" style="width: 100%;"></div>
+                                </div>
+                                <small class="text-muted mt-2 d-block">HTTPS validity and days until expiry.</small>
+                            </div>
+                        </div>
+
+                        <!-- 5. Host IP Abuse Risk -->
+                        <div class="col-md-6">
+                            <div class="score-card shadow-sm">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0"><i class="bi bi-hdd-network text-warning"></i> Host Server Abuse Risk</h6>
+                                    <span class="badge bg-success" id="valAbuseStatus">Clean Host</span>
+                                </div>
+                                <h4 class="fw-bold mb-2" id="valAbuseNum">5% <span class="fs-6 text-muted">Risk</span></h4>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" id="progAbuse" style="width: 5%;"></div>
+                                </div>
+                                <small class="text-muted mt-2 d-block">Lower is better. Flags network/server abuse.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. TAB: IP ADDRESS DATA (17 COLUMNS) -->
             <div id="tabIPs" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-diagram-3"></i> IP Intelligence & Listing History</h4>
@@ -174,7 +300,7 @@
                 </div>
             </div>
 
-            <!-- 3. TAB: MULTI-DNSBL BLACKLIST -->
+            <!-- 4. TAB: MULTI-DNSBL BLACKLIST -->
             <div id="tabEmailDNSBL" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-list-check"></i> Multi-DNSBL Mail Blacklist Scanner</h4>
@@ -191,7 +317,7 @@
                 </div>
             </div>
 
-            <!-- 4. TAB: GOOGLE & YAHOO COMPLIANCE -->
+            <!-- 5. TAB: GOOGLE & YAHOO COMPLIANCE -->
             <div id="tabEmailCompliance" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-patch-check"></i> Google & Yahoo 2024+ Deliverability Compliance</h4>
@@ -208,7 +334,7 @@
                 </div>
             </div>
 
-            <!-- 5. TAB: SMTP & PORT 25 HEALTH -->
+            <!-- 6. TAB: SMTP & PORT 25 HEALTH -->
             <div id="tabEmailSMTP" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-lightning-charge"></i> SMTP & Port 25 Health Inspector</h4>
@@ -225,7 +351,7 @@
                 </div>
             </div>
 
-            <!-- 6. TAB: BIMI & MTA-STS PROTOCOLS -->
+            <!-- 7. TAB: BIMI & MTA-STS PROTOCOLS -->
             <div id="tabEmailBIMI" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-award"></i> Brand BIMI & MTA-STS Inspector</h4>
@@ -242,7 +368,7 @@
                 </div>
             </div>
 
-            <!-- 7. TAB: SUBDOMAINS -->
+            <!-- 8. TAB: SUBDOMAINS -->
             <div id="tabSubdomains" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-search"></i> Subdomain Recon (crt.sh & AlienVault)</h4>
@@ -259,7 +385,7 @@
                 </div>
             </div>
 
-            <!-- 8. TAB: SSL -->
+            <!-- 9. TAB: SSL -->
             <div id="tabSSL" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-lock"></i> SSL / TLS Certificate Inspector</h4>
@@ -276,7 +402,7 @@
                 </div>
             </div>
 
-            <!-- 9. TAB: VIRUSTOTAL -->
+            <!-- 10. TAB: VIRUSTOTAL -->
             <div id="tabVirusTotal" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-bug"></i> VirusTotal Multi-AV Engine</h4>
@@ -315,7 +441,6 @@
             $('#' + tabId).addClass('active');
         }
 
-        // دالة تحويل رمز الدولة إلى علم إيموجي (e.g. US -> 🇺🇸)
         function getFlagEmoji(countryCode) {
             if (!countryCode || countryCode.length !== 2) return '';
             const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
@@ -346,7 +471,7 @@
             });
         }
 
-        // ================= 1. DOMAINS CONFIG (مع الأعمدة الـ 8 الإضافية) =================
+        // ================= 1. DOMAINS LOGIC =================
         const DOMAIN_CONFIGS = {
             general: {
                 title: "Domain - General Overview (Enriched with 8 Insights)",
@@ -492,11 +617,74 @@
 
             const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val, mode: mode }) });
             const json = await res.json();
-            // تفعيل التمرير الأفقي scrollX لـ General Mode لأنه يحتوي على أعمدة ثرية
             createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || [], mode === 'general');
         }
 
-        // ================= 2. IP ADDRESS DATA (17 COLUMNS + PDF/CSV) =================
+        // ================= 2. ALL SCORES LOGIC (جديد) =================
+        async function runAllScoresAnalysis() {
+            const dom = $('#allScoreDomainInput').val().trim();
+            if(!dom) return alert("المرجو إدخال دومين.");
+
+            const btn = $('#btnCalculateScores');
+            btn.html('<span class="spinner-border spinner-border-sm"></span> Calculating...').prop('disabled', true);
+
+            try {
+                const res = await fetch('/scan_domain_all_scores', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ domain: dom })
+                });
+                const data = await res.json();
+
+                if(data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                $('#scoresResultWrap').fadeIn();
+
+                // 1. Hero Card
+                $('#heroDomainName').text(data.domain);
+                $('#heroScoreVal').text(data.global_index);
+                $('#heroVerdictBadge').text(data.verdict).attr('class', `badge fs-6 px-3 py-2 bg-${data.verdict_badge}`);
+
+                // 2. Individual Cards
+                const s = data.scores;
+
+                // Spamhaus
+                $('#valSpamhausNum').html(`${s.spamhaus_threat.score} <span class="fs-6 text-muted">/ 100</span>`);
+                $('#valSpamhausStatus').text(s.spamhaus_threat.status).attr('class', `badge bg-${s.spamhaus_threat.color}`);
+                $('#progSpamhaus').css('width', `${s.spamhaus_threat.score}%`).attr('class', `progress-bar bg-${s.spamhaus_threat.color}`);
+
+                // Deliverability
+                $('#valDelivNum').text(`${s.email_deliverability.score}%`);
+                $('#valDelivStatus').text(s.email_deliverability.status).attr('class', `badge bg-${s.email_deliverability.color}`);
+                $('#valDelivDetails').text(s.email_deliverability.details);
+                $('#progDeliv').css('width', `${s.email_deliverability.score}%`).attr('class', `progress-bar bg-${s.email_deliverability.color}`);
+
+                // Age Trust
+                $('#valAgeNum').html(`${s.domain_age_trust.score} <span class="fs-6 text-muted">/ 100</span>`);
+                $('#valAgeStatus').text(s.domain_age_trust.status).attr('class', `badge bg-${s.domain_age_trust.color}`);
+                $('#progAge').css('width', `${s.domain_age_trust.score}%`).attr('class', `progress-bar bg-${s.domain_age_trust.color}`);
+
+                // SSL
+                $('#valSSLNum').text(`${s.ssl_security.score}%`);
+                $('#valSSLStatus').text(s.ssl_security.status).attr('class', `badge bg-${s.ssl_security.color}`);
+                $('#progSSL').css('width', `${s.ssl_security.score}%`).attr('class', `progress-bar bg-${s.ssl_security.color}`);
+
+                // Abuse
+                $('#valAbuseNum').html(`${s.ip_abuse.score}% <span class="fs-6 text-muted">Risk</span>`);
+                $('#valAbuseStatus').text(s.ip_abuse.status).attr('class', `badge bg-${s.ip_abuse.color}`);
+                $('#progAbuse').css('width', `${s.ip_abuse.score}%`).attr('class', `progress-bar bg-${s.ip_abuse.color}`);
+
+            } catch(e) {
+                alert("حدث خطأ أثناء فحص السكورات.");
+            } finally {
+                btn.html('<i class="bi bi-calculator"></i> Calculate All Scores').prop('disabled', false);
+            }
+        }
+
+        // ================= 3. IP ADDRESS DATA LOGIC =================
         async function runIPAnalysis() {
             const val = $('#ipInput').val().trim();
             if(!val) return;
@@ -540,7 +728,7 @@
             });
         }
 
-        // ================= 3. MULTI-DNSBL LOGIC =================
+        // ================= 4. MULTI-DNSBL LOGIC =================
         async function runDNSBLAnalysis() {
             const val = $('#dnsblInput').val().trim();
             if(!val) return;
@@ -556,7 +744,7 @@
             createDataTable('dnsblTableWrap', 'dnsblTable', columns, json.data || []);
         }
 
-        // ================= 4. COMPLIANCE LOGIC =================
+        // ================= 5. COMPLIANCE LOGIC =================
         async function runComplianceAnalysis() {
             const val = $('#compInput').val().trim();
             if(!val) return;
@@ -574,7 +762,7 @@
             createDataTable('compTableWrap', 'compTable', columns, json.data || []);
         }
 
-        // ================= 5. SMTP HEALTH LOGIC =================
+        // ================= 6. SMTP HEALTH LOGIC =================
         async function runSMTPAnalysis() {
             const val = $('#smtpInput').val().trim();
             if(!val) return;
@@ -591,7 +779,7 @@
             createDataTable('smtpTableWrap', 'smtpTable', columns, json.data || []);
         }
 
-        // ================= 6. BIMI & MTA-STS LOGIC =================
+        // ================= 7. BIMI & MTA-STS LOGIC =================
         async function runBIMIAnalysis() {
             const val = $('#bimiInput').val().trim();
             if(!val) return;
@@ -607,7 +795,7 @@
             createDataTable('bimiTableWrap', 'bimiTable', columns, json.data || []);
         }
 
-        // ================= 7. SUBDOMAINS, SSL, VIRUSTOTAL =================
+        // ================= 8. SUBDOMAINS, SSL, VIRUSTOTAL =================
         async function runSubdomainAnalysis() {
             const val = $('#subInput').val().trim();
             if(!val) return;
