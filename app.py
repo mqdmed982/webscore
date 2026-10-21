@@ -499,10 +499,32 @@ def scan_subdomains():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # 1. المصدر الأول: أرشيف الإنترنت Wayback Machine (كيجبد gigya وغيرها بدون أي سقف)
+    # 1. المصدر الأول: crt.name API (أسرع قاعدة بيانات عالمية لشهادات SSL بـ 5.7 مليار دومين وبدون سقف)
     try:
-        wb_url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=3000"
-        r_wb = requests.get(wb_url, headers=headers, timeout=8)
+        r_crtname = requests.get(f"https://crt.name/v1/search?apex={domain}", headers=headers, timeout=6)
+        if r_crtname.status_code == 200:
+            for line in r_crtname.text.split('\n'):
+                line = line.strip().lower()
+                if line.endswith(domain) and len(line) > len(domain):
+                    candidates.add(line)
+    except Exception as e:
+        print("crt.name error:", e)
+
+    # 2. المصدر الثاني: Subdomain Center API (مفتوح ومباشر)
+    try:
+        r_sc = requests.get(f"https://api.subdomain.center/?domain={domain}", headers=headers, timeout=6)
+        if r_sc.status_code == 200 and isinstance(r_sc.json(), list):
+            for h in r_sc.json():
+                h = str(h).strip().lower()
+                if h.endswith(domain) and len(h) > len(domain):
+                    candidates.add(h)
+    except Exception as e:
+        print("Subdomain Center error:", e)
+
+    # 3. المصدر الثالث: Wayback Machine CDX API بـ HTTPS
+    try:
+        wb_url = f"https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=3000"
+        r_wb = requests.get(wb_url, headers=headers, timeout=7)
         if r_wb.status_code == 200:
             urls = r_wb.json()
             for row in urls[1:]:
@@ -515,30 +537,18 @@ def scan_subdomains():
     except Exception as e:
         print("Wayback error:", e)
 
-    # 2. المصدر الثاني: RapidDNS (سريع جداً وبدون سقف 49)
+    # 4. المصدر الرابع: Anubis DB
     try:
-        r_rapid = requests.get(f"https://rapiddns.io/subdomain/{domain}?full=1#result", headers=headers, timeout=6)
-        if r_rapid.status_code == 200:
-            found = re.findall(r'<td>([a-zA-Z0-9.-]+\.' + re.escape(domain) + r')</td>', r_rapid.text)
-            for h in found:
-                h = h.lower().strip()
-                if h.endswith(domain) and len(h) > len(domain):
-                    candidates.add(h)
-    except Exception as e:
-        print("RapidDNS error:", e)
-
-    # 3. المصدر الثالث: AlienVault OTX Passive DNS
-    try:
-        r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
-        if r_otx.status_code == 200:
-            for item in r_otx.json().get('passive_dns', []):
-                h = item.get('hostname', '').lower().strip()
+        r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
+        if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
+            for h in r_anubis.json():
+                h = str(h).strip().lower()
                 if h.endswith(domain) and len(h) > len(domain):
                     candidates.add(h)
     except Exception as e:
         pass
 
-    # 4. المصدر الرابع: HackerTarget
+    # 5. المصدر الخامس: HackerTarget
     try:
         r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
         if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
@@ -551,19 +561,7 @@ def scan_subdomains():
     except Exception as e:
         pass
 
-    # 5. المصدر الخامس: crt.sh
-    try:
-        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=8)
-        if r_crt.status_code == 200:
-            for entry in r_crt.json():
-                for name in entry.get('name_value', '').lower().split('\n'):
-                    name = name.strip().lstrip('*.')
-                    if name.endswith(domain) and len(name) > len(domain):
-                        candidates.add(name)
-    except Exception as e:
-        pass
-
-    # ================= فحص الـ Live DNS بـ 50 Thread =================
+    # ================= فحص الـ Live DNS بـ 50 Thread فائق السرعة =================
     def verify_subdomain(sub):
         try:
             ip = socket.gethostbyname(sub)
@@ -598,7 +596,7 @@ def scan_subdomains():
             "logged_at": "Historical"
         }
 
-    candidate_list = list(candidates)[:600]
+    candidate_list = list(candidates)[:800]
     with ThreadPoolExecutor(max_workers=50) as executor:
         results = list(executor.map(verify_subdomain, candidate_list))
 
