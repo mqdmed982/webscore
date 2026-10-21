@@ -5,6 +5,7 @@ import time
 import socket
 import requests
 from datetime import datetime
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 import dns.resolver
 from flask import Flask, render_template, request, jsonify
@@ -484,7 +485,7 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 4. SUBDOMAINS RECON (MASSIVE & MULTI-THREADED) =================
+# ================= 4. SUBDOMAINS RECON (MASSIVE & UNCAPPED ENGINE) =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
@@ -498,19 +499,35 @@ def scan_subdomains():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # 1. crt.sh (الكامل بدون حواجز)
+    # 1. المصدر الأول: أرشيف الإنترنت Wayback Machine (كيجبد gigya وغيرها بدون أي سقف)
     try:
-        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=6)
-        if r_crt.status_code == 200:
-            for entry in r_crt.json():
-                for name in entry.get('name_value', '').lower().split('\n'):
-                    name = name.strip().lstrip('*.')
-                    if name.endswith(domain) and len(name) > len(domain):
-                        candidates.add(name)
-    except Exception:
-        pass
+        wb_url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=3000"
+        r_wb = requests.get(wb_url, headers=headers, timeout=8)
+        if r_wb.status_code == 200:
+            urls = r_wb.json()
+            for row in urls[1:]:
+                if row and len(row) > 0:
+                    raw_url = row[0]
+                    parsed = urlparse(raw_url if "://" in raw_url else f"http://{raw_url}")
+                    host = (parsed.hostname or "").lower().strip()
+                    if host.endswith(domain) and len(host) > len(domain):
+                        candidates.add(host)
+    except Exception as e:
+        print("Wayback error:", e)
 
-    # 2. AlienVault OTX Passive DNS
+    # 2. المصدر الثاني: RapidDNS (سريع جداً وبدون سقف 49)
+    try:
+        r_rapid = requests.get(f"https://rapiddns.io/subdomain/{domain}?full=1#result", headers=headers, timeout=6)
+        if r_rapid.status_code == 200:
+            found = re.findall(r'<td>([a-zA-Z0-9.-]+\.' + re.escape(domain) + r')</td>', r_rapid.text)
+            for h in found:
+                h = h.lower().strip()
+                if h.endswith(domain) and len(h) > len(domain):
+                    candidates.add(h)
+    except Exception as e:
+        print("RapidDNS error:", e)
+
+    # 3. المصدر الثالث: AlienVault OTX Passive DNS
     try:
         r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
         if r_otx.status_code == 200:
@@ -518,63 +535,75 @@ def scan_subdomains():
                 h = item.get('hostname', '').lower().strip()
                 if h.endswith(domain) and len(h) > len(domain):
                     candidates.add(h)
-    except Exception:
+    except Exception as e:
         pass
 
-    # 3. Anubis DB
-    try:
-        r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
-        if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
-            for h in r_anubis.json():
-                h = str(h).strip().lower()
-                if h.endswith(domain) and len(h) > len(domain):
-                    candidates.add(h)
-    except Exception:
-        pass
-
-    # 4. HackerTarget
+    # 4. المصدر الرابع: HackerTarget
     try:
         r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
         if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
             for line in r_ht.text.strip().split('\n'):
                 parts = line.split(',')
-                if len(parts) >= 2:
+                if len(parts) >= 1:
                     h = parts[0].strip().lower()
                     if h.endswith(domain) and len(h) > len(domain):
                         candidates.add(h)
-    except Exception:
+    except Exception as e:
         pass
 
-    # 5. فحص أشهر 40 دومين فرعي
-    common_words = [
-        "www", "mail", "api", "shop", "app", "dev", "portal", "admin", "cpanel", "webmail",
-        "blog", "vpn", "m", "cloud", "server", "smtp", "secure", "support", "test", "cdn",
-        "remote", "autodiscover", "auth", "login", "staging", "beta", "status", "dashboard",
-        "docs", "help", "store", "chat", "direct", "ftp", "ns1", "ns2", "relay", "gateway",
-        "billing", "crm", "internal", "corp", "sso"
-    ]
-    for w in common_words:
-        candidates.add(f"{w}.{domain}")
+    # 5. المصدر الخامس: crt.sh
+    try:
+        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=8)
+        if r_crt.status_code == 200:
+            for entry in r_crt.json():
+                for name in entry.get('name_value', '').lower().split('\n'):
+                    name = name.strip().lstrip('*.')
+                    if name.endswith(domain) and len(name) > len(domain):
+                        candidates.add(name)
+    except Exception as e:
+        pass
 
-    # فحص متوازي بـ 30 Thread لتأكيد الـ Live IP
-    def resolve_worker(sub):
+    # ================= فحص الـ Live DNS بـ 50 Thread =================
+    def verify_subdomain(sub):
         try:
             ip = socket.gethostbyname(sub)
             return {
                 "subdomain": sub,
                 "ip": ip,
-                "status": "Active (Live DNS)",
+                "status": "Active (Live IP)",
                 "issuer": f"Live IP: {ip}",
                 "logged_at": "Active / Live DNS"
             }
         except Exception:
-            return None
+            pass
 
-    with ThreadPoolExecutor(max_workers=30) as executor:
-        results = list(executor.map(resolve_worker, list(candidates)[:300]))
+        try:
+            cname_ans = dns.resolver.resolve(sub, 'CNAME')
+            target = str(cname_ans[0].target).rstrip('.')
+            return {
+                "subdomain": sub,
+                "ip": f"CNAME: {target}",
+                "status": "Active (CNAME)",
+                "issuer": f"CNAME: {target}",
+                "logged_at": "Active / Live DNS"
+            }
+        except Exception:
+            pass
+
+        return {
+            "subdomain": sub,
+            "ip": "Unresolved / Passive",
+            "status": "Observed (Archive/CT)",
+            "issuer": "Observed",
+            "logged_at": "Historical"
+        }
+
+    candidate_list = list(candidates)[:600]
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        results = list(executor.map(verify_subdomain, candidate_list))
 
     verified_results = [res for res in results if res is not None]
-    verified_results.sort(key=lambda x: x['subdomain'])
+    verified_results.sort(key=lambda x: (0 if "Active" in x['status'] else 1, x['subdomain']))
 
     return jsonify({"data": verified_results})
 
@@ -596,7 +625,8 @@ def scan_cname():
         f"shop.{domain}", f"store.{domain}", f"blog.{domain}", f"cdn.{domain}",
         f"status.{domain}", f"help.{domain}", f"support.{domain}", f"app.{domain}",
         f"mail.{domain}", f"www.{domain}", f"portal.{domain}", f"docs.{domain}",
-        f"auth.{domain}", f"api.{domain}", f"dev.{domain}", f"m.{domain}"
+        f"auth.{domain}", f"api.{domain}", f"dev.{domain}", f"m.{domain}",
+        f"gigya.{domain}", f"login.{domain}", f"sso.{domain}"
     ]
 
     def detect_cname_provider(target):
@@ -611,6 +641,7 @@ def scan_cname():
         elif "cloudflare.net" in t: return "Cloudflare"
         elif "azurewebsites.net" in t or "trafficmanager.net" in t: return "Microsoft Azure"
         elif "wpengine.com" in t: return "WP Engine"
+        elif "gigya.com" in t: return "Gigya / SAP Identity"
         return "Custom / External CNAME"
 
     for host in check_list:
