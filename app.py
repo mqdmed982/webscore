@@ -5,10 +5,9 @@ import time
 import socket
 import requests
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 import dns.resolver
 from flask import Flask, render_template, request, jsonify
-from concurrent.futures import ThreadPoolExecutor
-
 
 app = Flask(__name__)
 
@@ -300,7 +299,7 @@ def scan_domain_all_scores():
         }
     })
 
-# ================= 2. DOMAINS SCANNER =================
+# ================= 2. DOMAINS SCANNER (8 CHECKS + ENRICHED) =================
 @app.route('/scan', methods=['POST'])
 def scan_domains():
     try:
@@ -485,7 +484,7 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= SUBDOMAINS RECON (MASSIVE & MULTI-THREADED) =================
+# ================= 4. SUBDOMAINS RECON (MASSIVE & MULTI-THREADED) =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
@@ -499,7 +498,7 @@ def scan_subdomains():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # 1. المصدر الأول: crt.sh (الكامل بدون أي سقف محدود)
+    # 1. crt.sh (الكامل بدون حواجز)
     try:
         r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=6)
         if r_crt.status_code == 200:
@@ -511,7 +510,7 @@ def scan_subdomains():
     except Exception:
         pass
 
-    # 2. المصدر الثاني: AlienVault OTX (Passive DNS ضخم)
+    # 2. AlienVault OTX Passive DNS
     try:
         r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
         if r_otx.status_code == 200:
@@ -522,7 +521,7 @@ def scan_subdomains():
     except Exception:
         pass
 
-    # 3. المصدر الثالث: Anubis DB (مختص فـ الـ Subdomains)
+    # 3. Anubis DB
     try:
         r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
         if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
@@ -533,7 +532,7 @@ def scan_subdomains():
     except Exception:
         pass
 
-    # 4. المصدر الرابع: HackerTarget
+    # 4. HackerTarget
     try:
         r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
         if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
@@ -546,7 +545,7 @@ def scan_subdomains():
     except Exception:
         pass
 
-    # 5. فحص أشهر 40 دومين فرعي شائع
+    # 5. فحص أشهر 40 دومين فرعي
     common_words = [
         "www", "mail", "api", "shop", "app", "dev", "portal", "admin", "cpanel", "webmail",
         "blog", "vpn", "m", "cloud", "server", "smtp", "secure", "support", "test", "cdn",
@@ -557,26 +556,24 @@ def scan_subdomains():
     for w in common_words:
         candidates.add(f"{w}.{domain}")
 
-    # ================= فحص متوازي فائق السرعة بـ 30 Thread =================
+    # فحص متوازي بـ 30 Thread لتأكيد الـ Live IP
     def resolve_worker(sub):
         try:
             ip = socket.gethostbyname(sub)
             return {
                 "subdomain": sub,
                 "ip": ip,
-                "status": "Active (Live DNS)"
+                "status": "Active (Live DNS)",
+                "issuer": f"Live IP: {ip}",
+                "logged_at": "Active / Live DNS"
             }
         except Exception:
             return None
 
-    # كفحص حتى لـ 300 مرشح فـ 2 ثواني فقط بفضل الـ Multi-Threading
     with ThreadPoolExecutor(max_workers=30) as executor:
         results = list(executor.map(resolve_worker, list(candidates)[:300]))
 
-    # تصفية الدومينات لي حية فقط
     verified_results = [res for res in results if res is not None]
-
-    # ترتيب أبجدي أنيق
     verified_results.sort(key=lambda x: x['subdomain'])
 
     return jsonify({"data": verified_results})
