@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# إعدادات حساب Spamhaus (يمكن وضعها في Environment Variables على Render)
+# إعدادات حساب Spamhaus (يمكنك وضعها في Environment Variables على Render)
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
 SIA_PASSWORD = os.getenv("SIA_PASSWORD", "")
 VT_API_KEY = os.getenv("VT_API_KEY", "")
@@ -169,7 +169,7 @@ def check_http_live(domain):
 def index():
     return render_template('index.html')
 
-# ================= 1. UNIFIED ALL-SCORES ENGINE (جديد) =================
+# ================= 1. UNIFIED ALL-SCORES ENGINE =================
 @app.route('/scan_domain_all_scores', methods=['POST'])
 def scan_domain_all_scores():
     data = request.get_json() or {}
@@ -483,7 +483,107 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 4. MULTI-DNSBL BLACKLIST =================
+# ================= 4. SUBDOMAINS (WITH CNAME & A RECORD RESOLUTION) =================
+@app.route('/scan_subdomains', methods=['POST'])
+def scan_subdomains():
+    data = request.get_json() or {}
+    domain = data.get('domain', '').strip().replace("https://", "").replace("http://", "").split("/")[0]
+
+    if not domain:
+        return jsonify({"data": []})
+
+    candidate_subs = set()
+    verified_results = []
+
+    custom_resolver = dns.resolver.Resolver()
+    custom_resolver.timeout = 2.0
+    custom_resolver.lifetime = 2.0
+
+    def resolve_subdomain_details(sub):
+        cname_target = None
+        resolved_ip = None
+
+        # 1. فحص CNAME
+        try:
+            cname_ans = custom_resolver.resolve(sub, 'CNAME')
+            cname_target = str(cname_ans[0].target).rstrip('.')
+        except Exception:
+            pass
+
+        # 2. فحص A Record (IP)
+        try:
+            a_ans = custom_resolver.resolve(sub, 'A')
+            resolved_ip = str(a_ans[0].to_text())
+        except Exception:
+            if cname_target:
+                try:
+                    resolved_ip = socket.gethostbyname(cname_target)
+                except Exception:
+                    pass
+
+        # إذا لقى CNAME أو لقى IP فهو Subdomain حقيقي وشغال
+        if cname_target or resolved_ip:
+            record_type = "CNAME" if cname_target else "A"
+            target_display = cname_target if cname_target else "Direct A Record"
+            
+            # كشف خطر Subdomain Takeover
+            status = "Active"
+            if cname_target and not resolved_ip:
+                status = "Dangling CNAME ⚠️ (Takeover Risk)"
+
+            return {
+                "subdomain": sub,
+                "record_type": record_type,
+                "target": target_display,
+                "ip": resolved_ip or "No IP (Unclaimed)",
+                "status": status
+            }
+        return None
+
+    # 1. جلب من HackerTarget
+    try:
+        r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
+        if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
+            for line in r_ht.text.strip().split('\n'):
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    sub_host = parts[0].strip().lower()
+                    if sub_host.endswith(domain) and sub_host not in candidate_subs:
+                        candidate_subs.add(sub_host)
+    except Exception:
+        pass
+
+    # 2. فحص أشهر البوادئ
+    common_sub_prefixes = [
+        "www", "mail", "api", "shop", "store", "blog", "app", 
+        "portal", "admin", "cpanel", "webmail", "dev", "cdn", 
+        "status", "support", "help", "auth", "vpn", "cloud", "m"
+    ]
+    for prefix in common_sub_prefixes:
+        candidate_subs.add(f"{prefix}.{domain}")
+
+    # 3. فحص crt.sh
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=5)
+        if r_crt.status_code == 200:
+            for entry in r_crt.json()[:40]:
+                for sub in entry.get('name_value', '').lower().split('\n'):
+                    sub = sub.strip().lstrip('*.')
+                    if sub.endswith(domain) and len(sub) > len(domain):
+                        candidate_subs.add(sub)
+    except Exception:
+        pass
+
+    # حل وفحص كل دومين مرشح
+    for sub in candidate_subs:
+        details = resolve_subdomain_details(sub)
+        if details:
+            verified_results.append(details)
+
+    return jsonify({"data": verified_results})
+
+# ================= 5. MULTI-DNSBL BLACKLIST =================
 DNSBL_PROVIDERS = [
     {"name": "Spamhaus ZEN", "host": "zen.spamhaus.org"},
     {"name": "SpamCop", "host": "bl.spamcop.net"},
@@ -530,7 +630,7 @@ def scan_email_dnsbl():
 
     return jsonify({"data": results})
 
-# ================= 5. GOOGLE & YAHOO COMPLIANCE =================
+# ================= 6. GOOGLE & YAHOO COMPLIANCE =================
 @app.route('/scan_email_compliance', methods=['POST'])
 def scan_email_compliance():
     data = request.get_json() or {}
@@ -585,7 +685,7 @@ def scan_email_compliance():
 
     return jsonify({"data": results})
 
-# ================= 6. SMTP & PORT 25 HEALTH =================
+# ================= 7. SMTP & PORT 25 HEALTH =================
 @app.route('/scan_smtp_health', methods=['POST'])
 def scan_smtp_health():
     data = request.get_json() or {}
@@ -618,7 +718,7 @@ def scan_smtp_health():
 
     return jsonify({"data": results})
 
-# ================= 7. BIMI & MTA-STS =================
+# ================= 8. BIMI & MTA-STS =================
 @app.route('/scan_email_advanced', methods=['POST'])
 def scan_email_advanced():
     data = request.get_json() or {}
@@ -654,84 +754,8 @@ def scan_email_advanced():
 
     return jsonify({"data": results})
 
-# ================= 8. SUBDOMAINS, SSL, VIRUSTOTAL =================
-# ================= SUBDOMAINS (100% LIVE & VERIFIED DNS) =================
-@app.route('/scan_subdomains', methods=['POST'])
-def scan_subdomains():
-    data = request.get_json() or {}
-    domain = data.get('domain', '').strip().replace("https://", "").replace("http://", "").split("/")[0]
-
-    if not domain:
-        return jsonify({"data": []})
-
-    candidate_subs = set()
-    verified_results = []
-
-    # 1. المصدر الأول: HackerTarget (كيجيب فقط الدومينات الحية مع عناوين الـ IP الحقيقية)
-    try:
-        r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=6)
-        if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
-            for line in r_ht.text.strip().split('\n'):
-                parts = line.split(',')
-                if len(parts) >= 2:
-                    sub_host = parts[0].strip().lower()
-                    sub_ip = parts[1].strip()
-                    if sub_host.endswith(domain) and sub_host not in candidate_subs:
-                        verified_results.append({
-                            "subdomain": sub_host,
-                            "issuer": f"Live IP: {sub_ip}",
-                            "logged_at": "Active / Live DNS"
-                        })
-                        candidate_subs.add(sub_host)
-    except Exception:
-        pass
-
-    # 2. المصدر الثاني: فحص مباشر لـ أشهر الـ Subdomains الحقيقية فـ DNS السيرفر
-    common_sub_prefixes = [
-        "www", "mail", "api", "webmail", "cpanel", "dev", "app", 
-        "portal", "admin", "blog", "shop", "vpn", "autodiscover", 
-        "remote", "server", "smtp", "secure", "m", "cloud", "support"
-    ]
-    for prefix in common_sub_prefixes:
-        target_sub = f"{prefix}.{domain}"
-        if target_sub not in candidate_subs:
-            try:
-                # محاولة فحص الاتصال بالـ DNS: إلا جاوب كيتزاد، إلا ما جاوبش كيتلغى
-                real_ip = socket.gethostbyname(target_sub)
-                verified_results.append({
-                    "subdomain": target_sub,
-                    "issuer": f"Live IP: {real_ip}",
-                    "logged_at": "Active / Live DNS"
-                })
-                candidate_subs.add(target_sub)
-            except Exception:
-                pass # ميت أو ما كاينش -> كيتلغى وما كيتحطش فالجدول!
-
-    # 3. المصدر الثالث: crt.sh مع فلترة صارمة (فقط لي كيدير Resolve لـ IP حقيقي)
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=6)
-        if r_crt.status_code == 200:
-            entries = r_crt.json()
-            for entry in entries[:50]:
-                for sub in entry.get('name_value', '').lower().split('\n'):
-                    sub = sub.strip().lstrip('*.')
-                    if sub.endswith(domain) and sub not in candidate_subs and len(sub) > len(domain):
-                        # اختبار الـ DNS الحي: إلا كان مات فـ الـ DNS كيتجاهلو
-                        try:
-                            resolved_ip = socket.gethostbyname(sub)
-                            verified_results.append({
-                                "subdomain": sub,
-                                "issuer": f"Live IP: {resolved_ip}",
-                                "logged_at": entry.get('entry_timestamp', 'Recent')[:10]
-                            })
-                            candidate_subs.add(sub)
-                        except Exception:
-                            pass # شهادة SSL قديمة لدومين مات -> حذف!
-    except Exception:
-        pass
-
-    return jsonify({"data": verified_results})
+# ================= 9. SSL & VIRUSTOTAL =================
+@app.route('/scan_ssl', methods=['POST'])
 def scan_ssl():
     data = request.get_json() or {}
     domains = [d.strip() for d in data.get('domains', '').split('\n') if d.strip()]
