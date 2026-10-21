@@ -36,7 +36,7 @@
         .tab-section.active { display: block; }
         .card-top-green { border-top: 3px solid #28a745 !important; }
         
-        /* Styles for Unified All-Scores Hub */
+        /* Unified Scorecard */
         .score-hero { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fff; border-radius: 8px; padding: 25px; }
         .score-circle { width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
         .score-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; height: 100%; }
@@ -99,7 +99,7 @@
                 <div class="sidebar-category">Reconnaissance & Web</div>
                 <li>
                     <a href="javascript:void(0)" class="sidebar-item" onclick="showTab('tabSubdomains', this)">
-                        <span><i class="bi bi-search"></i> Subdomains (crt.sh)</span>
+                        <span><i class="bi bi-search"></i> Subdomains (with CNAME)</span>
                         <i class="bi bi-chevron-right small"></i>
                     </a>
                 </li>
@@ -165,7 +165,7 @@
                 </div>
             </div>
 
-            <!-- 2. TAB: ALL DOMAIN SCORES (جديد) -->
+            <!-- 2. TAB: ALL DOMAIN SCORES -->
             <div id="tabAllScores" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-speedometer2"></i> Unified Domain Scoring Hub</h4>
@@ -184,9 +184,7 @@
                     </div>
                 </div>
 
-                <!-- Result Scorecard Container -->
                 <div id="scoresResultWrap" style="display: none;">
-                    <!-- Hero Card: Global Index -->
                     <div class="score-hero mb-4 d-flex flex-wrap align-items-center justify-content-between shadow">
                         <div class="d-flex align-items-center gap-3">
                             <div class="score-circle bg-primary" id="heroScoreVal">94</div>
@@ -200,9 +198,7 @@
                         </div>
                     </div>
 
-                    <!-- 5 Score Breakdown Cards -->
                     <div class="row g-3">
-                        <!-- 1. Spamhaus Threat Score -->
                         <div class="col-md-4">
                             <div class="score-card shadow-sm">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -217,7 +213,6 @@
                             </div>
                         </div>
 
-                        <!-- 2. Email Deliverability Score -->
                         <div class="col-md-4">
                             <div class="score-card shadow-sm">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -232,7 +227,6 @@
                             </div>
                         </div>
 
-                        <!-- 3. Domain Age Trust Score -->
                         <div class="col-md-4">
                             <div class="score-card shadow-sm">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -247,7 +241,6 @@
                             </div>
                         </div>
 
-                        <!-- 4. SSL & Security Score -->
                         <div class="col-md-6">
                             <div class="score-card shadow-sm">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -262,7 +255,6 @@
                             </div>
                         </div>
 
-                        <!-- 5. Host IP Abuse Risk -->
                         <div class="col-md-6">
                             <div class="score-card shadow-sm">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -300,7 +292,24 @@
                 </div>
             </div>
 
-            <!-- 4. TAB: MULTI-DNSBL BLACKLIST -->
+            <!-- 4. TAB: SUBDOMAINS (WITH CNAME & STATUS) -->
+            <div id="tabSubdomains" class="tab-section">
+                <div class="mb-3">
+                    <h4 class="text-primary fw-bold"><i class="bi bi-search"></i> Subdomain Recon (with CNAME & Live DNS)</h4>
+                    <div class="text-muted small">Enumerate verified subdomains with CNAME canonical alias targets, live IP resolution, and takeover risk detection.</div>
+                </div>
+                <div class="card mb-3 shadow-sm border">
+                    <div class="card-header bg-light py-2"><strong>Target Apex Domain</strong></div>
+                    <div class="card-body p-2"><input type="text" id="subInput" class="form-control" value="claude.ai"></div>
+                </div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runSubdomainAnalysis()"><i class="bi bi-search"></i> Find Subdomains</button></div>
+                <div class="card shadow-sm border">
+                    <div class="card-header-blue">Discovered Subdomains (Live DNS & CNAME)</div>
+                    <div class="card-body p-3"><div class="table-responsive" id="subTableWrap"></div></div>
+                </div>
+            </div>
+
+            <!-- 5. TAB: MULTI-DNSBL BLACKLIST -->
             <div id="tabEmailDNSBL" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-list-check"></i> Multi-DNSBL Mail Blacklist Scanner</h4>
@@ -317,7 +326,7 @@
                 </div>
             </div>
 
-            <!-- 5. TAB: GOOGLE & YAHOO COMPLIANCE -->
+            <!-- 6. TAB: GOOGLE & YAHOO COMPLIANCE -->
             <div id="tabEmailCompliance" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-patch-check"></i> Google & Yahoo 2024+ Deliverability Compliance</h4>
@@ -334,7 +343,7 @@
                 </div>
             </div>
 
-            <!-- 6. TAB: SMTP & PORT 25 HEALTH -->
+            <!-- 7. TAB: SMTP & PORT 25 HEALTH -->
             <div id="tabEmailSMTP" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-lightning-charge"></i> SMTP & Port 25 Health Inspector</h4>
@@ -351,7 +360,7 @@
                 </div>
             </div>
 
-            <!-- 7. TAB: BIMI & MTA-STS PROTOCOLS -->
+            <!-- 8. TAB: BIMI & MTA-STS PROTOCOLS -->
             <div id="tabEmailBIMI" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-award"></i> Brand BIMI & MTA-STS Inspector</h4>
@@ -365,23 +374,6 @@
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">BIMI & Security Policy Records</div>
                     <div class="card-body p-3"><div class="table-responsive" id="bimiTableWrap"></div></div>
-                </div>
-            </div>
-
-            <!-- 8. TAB: SUBDOMAINS -->
-            <div id="tabSubdomains" class="tab-section">
-                <div class="mb-3">
-                    <h4 class="text-primary fw-bold"><i class="bi bi-search"></i> Subdomain Recon (crt.sh & AlienVault)</h4>
-                    <div class="text-muted small">Enumerate public subdomains discovered through Certificate Transparency Logs.</div>
-                </div>
-                <div class="card mb-3 shadow-sm border">
-                    <div class="card-header bg-light py-2"><strong>Target Apex Domain</strong></div>
-                    <div class="card-body p-2"><input type="text" id="subInput" class="form-control" value="claude.ai"></div>
-                </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runSubdomainAnalysis()"><i class="bi bi-search"></i> Find Subdomains</button></div>
-                <div class="card shadow-sm border">
-                    <div class="card-header-blue">Discovered Subdomains</div>
-                    <div class="card-body p-3"><div class="table-responsive" id="subTableWrap"></div></div>
                 </div>
             </div>
 
@@ -598,250 +590,4 @@
                 ]
             },
             hostnames: {
-                title: "Domain - Hostnames Listed",
-                columns: [
-                    { title: "Domain", data: "domain", defaultContent: "N/A" },
-                    { title: "Hostname", data: "hostname", defaultContent: "N/A" },
-                    { title: "Record Type", data: "type", defaultContent: "Observed" },
-                    { title: "Status", data: "status", defaultContent: "Clean" }
-                ]
-            }
-        };
-
-        async function runDomainAnalysis() {
-            const val = $('#domainInput').val().trim();
-            if(!val) return alert("المرجو إدخال دومين.");
-            const mode = $('input[name="scanType"]:checked').val() || 'general';
-            const cfg = DOMAIN_CONFIGS[mode] || DOMAIN_CONFIGS['general'];
-            $('#domainTableHeader').text(cfg.title);
-
-            const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val, mode: mode }) });
-            const json = await res.json();
-            createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || [], mode === 'general');
-        }
-
-        // ================= 2. ALL SCORES LOGIC (جديد) =================
-        async function runAllScoresAnalysis() {
-            const dom = $('#allScoreDomainInput').val().trim();
-            if(!dom) return alert("المرجو إدخال دومين.");
-
-            const btn = $('#btnCalculateScores');
-            btn.html('<span class="spinner-border spinner-border-sm"></span> Calculating...').prop('disabled', true);
-
-            try {
-                const res = await fetch('/scan_domain_all_scores', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ domain: dom })
-                });
-                const data = await res.json();
-
-                if(data.error) {
-                    alert(data.error);
-                    return;
-                }
-
-                $('#scoresResultWrap').fadeIn();
-
-                // 1. Hero Card
-                $('#heroDomainName').text(data.domain);
-                $('#heroScoreVal').text(data.global_index);
-                $('#heroVerdictBadge').text(data.verdict).attr('class', `badge fs-6 px-3 py-2 bg-${data.verdict_badge}`);
-
-                // 2. Individual Cards
-                const s = data.scores;
-
-                // Spamhaus
-                $('#valSpamhausNum').html(`${s.spamhaus_threat.score} <span class="fs-6 text-muted">/ 100</span>`);
-                $('#valSpamhausStatus').text(s.spamhaus_threat.status).attr('class', `badge bg-${s.spamhaus_threat.color}`);
-                $('#progSpamhaus').css('width', `${s.spamhaus_threat.score}%`).attr('class', `progress-bar bg-${s.spamhaus_threat.color}`);
-
-                // Deliverability
-                $('#valDelivNum').text(`${s.email_deliverability.score}%`);
-                $('#valDelivStatus').text(s.email_deliverability.status).attr('class', `badge bg-${s.email_deliverability.color}`);
-                $('#valDelivDetails').text(s.email_deliverability.details);
-                $('#progDeliv').css('width', `${s.email_deliverability.score}%`).attr('class', `progress-bar bg-${s.email_deliverability.color}`);
-
-                // Age Trust
-                $('#valAgeNum').html(`${s.domain_age_trust.score} <span class="fs-6 text-muted">/ 100</span>`);
-                $('#valAgeStatus').text(s.domain_age_trust.status).attr('class', `badge bg-${s.domain_age_trust.color}`);
-                $('#progAge').css('width', `${s.domain_age_trust.score}%`).attr('class', `progress-bar bg-${s.domain_age_trust.color}`);
-
-                // SSL
-                $('#valSSLNum').text(`${s.ssl_security.score}%`);
-                $('#valSSLStatus').text(s.ssl_security.status).attr('class', `badge bg-${s.ssl_security.color}`);
-                $('#progSSL').css('width', `${s.ssl_security.score}%`).attr('class', `progress-bar bg-${s.ssl_security.color}`);
-
-                // Abuse
-                $('#valAbuseNum').html(`${s.ip_abuse.score}% <span class="fs-6 text-muted">Risk</span>`);
-                $('#valAbuseStatus').text(s.ip_abuse.status).attr('class', `badge bg-${s.ip_abuse.color}`);
-                $('#progAbuse').css('width', `${s.ip_abuse.score}%`).attr('class', `progress-bar bg-${s.ip_abuse.color}`);
-
-            } catch(e) {
-                alert("حدث خطأ أثناء فحص السكورات.");
-            } finally {
-                btn.html('<i class="bi bi-calculator"></i> Calculate All Scores').prop('disabled', false);
-            }
-        }
-
-        // ================= 3. IP ADDRESS DATA LOGIC =================
-        async function runIPAnalysis() {
-            const val = $('#ipInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_ip', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ips: val }) });
-            const json = await res.json();
-
-            $('#ipTableWrap').html('<table id="ipTable" class="table table-bordered table-custom w-100 nowrap"><thead></thead><tbody></tbody></table>');
-
-            const columns = [
-                { title: "IP Address", data: "ipaddress", defaultContent: "N/A" },
-                { title: "Dataset", data: "dataset", defaultContent: "N/A" },
-                { title: "ASN", data: "asn", defaultContent: "N/A" },
-                { title: "CC", data: "cc", defaultContent: "N/A" },
-                { title: "Listed", data: "listed", defaultContent: "N/A" },
-                { title: "Seen", data: "seen", defaultContent: "N/A" },
-                { title: "Valid Until", data: "valid_until", defaultContent: "N/A" },
-                { title: "Rule", data: "rule", defaultContent: "N/A" },
-                { title: "Botname", data: "botname", defaultContent: "N/A" },
-                { title: "Malpedia", data: "malpedia", defaultContent: "N/A" },
-                { title: "Detection", data: "detection", defaultContent: "N/A" },
-                { title: "Dst IP/Port", data: "dst_ip_port", defaultContent: "N/A" },
-                { title: "Heuristic", data: "heuristic", defaultContent: "N/A" },
-                { title: "Lat/ Lon", data: "lat_lon", defaultContent: "N/A" },
-                { title: "Protocol", data: "protocol", defaultContent: "N/A" },
-                { title: "Src IP/Port", data: "src_ip_port", defaultContent: "N/A" },
-                { title: "Helo", data: "helo", defaultContent: "N/A" }
-            ];
-
-            let theadHtml = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
-            $('#ipTable thead').html(theadHtml);
-
-            $('#ipTable').DataTable({
-                data: json.data || [],
-                columns: columns,
-                scrollX: true,
-                dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
-                buttons: [
-                    { extend: 'csvHtml5', text: 'CSV', className: 'btn btn-export' },
-                    { extend: 'pdfHtml5', text: 'PDF', className: 'btn btn-export', orientation: 'landscape', pageSize: 'A3' }
-                ]
-            });
-        }
-
-        // ================= 4. MULTI-DNSBL LOGIC =================
-        async function runDNSBLAnalysis() {
-            const val = $('#dnsblInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_email_dnsbl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Blacklist Provider", data: "dnsbl" },
-                { title: "Target Queried", data: "target" },
-                { title: "Resolved IP", data: "ip", render: d => `<code>${d}</code>` },
-                { title: "Status", data: "status", render: d => d.includes('Listed') ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                { title: "Details", data: "details" }
-            ];
-            createDataTable('dnsblTableWrap', 'dnsblTable', columns, json.data || []);
-        }
-
-        // ================= 5. COMPLIANCE LOGIC =================
-        async function runComplianceAnalysis() {
-            const val = $('#compInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_email_compliance', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "SPF Record", data: "spf", render: d => d === 'Pass' ? '<span class="badge bg-success">Pass</span>' : '<span class="badge bg-danger">Missing</span>' },
-                { title: "DMARC Policy", data: "dmarc" },
-                { title: "DKIM Key", data: "dkim", render: d => d.includes('Detected') ? '<span class="badge bg-success">Detected</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
-                { title: "rDNS / PTR", data: "ptr" },
-                { title: "Score", data: "score" },
-                { title: "Deliverability Verdict", data: "verdict", render: d => d.includes('PASS') ? `<span class="badge bg-success">${d}</span>` : `<span class="badge bg-danger">${d}</span>` }
-            ];
-            createDataTable('compTableWrap', 'compTable', columns, json.data || []);
-        }
-
-        // ================= 6. SMTP HEALTH LOGIC =================
-        async function runSMTPAnalysis() {
-            const val = $('#smtpInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_smtp_health', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "MX Mail Server", data: "mx_host" },
-                { title: "SMTP 220 Banner", data: "banner" },
-                { title: "STARTTLS Encryption", data: "starttls", render: d => d.includes('Supported') ? '<span class="badge bg-success">Supported</span>' : '<span class="badge bg-warning text-dark">No TLS</span>' },
-                { title: "Latency (ms)", data: "latency" },
-                { title: "Connection Status", data: "status", render: d => d === 'Healthy' ? '<span class="badge bg-success">Healthy</span>' : '<span class="badge bg-danger">Closed</span>' }
-            ];
-            createDataTable('smtpTableWrap', 'smtpTable', columns, json.data || []);
-        }
-
-        // ================= 7. BIMI & MTA-STS LOGIC =================
-        async function runBIMIAnalysis() {
-            const val = $('#bimiInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_email_advanced', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "BIMI Status", data: "bimi", render: d => d === 'Active' ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Not Configured</span>' },
-                { title: "Brand Logo SVG", data: "bimi_logo" },
-                { title: "MTA-STS Policy", data: "mta_sts", render: d => d === 'Enforced' ? '<span class="badge bg-success">Enforced</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
-                { title: "TLS Reporting (TLS-RPT)", data: "tls_rpt" }
-            ];
-            createDataTable('bimiTableWrap', 'bimiTable', columns, json.data || []);
-        }
-
-        // ================= 8. SUBDOMAINS, SSL, VIRUSTOTAL =================
-        async function runSubdomainAnalysis() {
-            const val = $('#subInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_subdomains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Discovered Subdomain", data: "subdomain", render: d => `<a href="https://${d}" target="_blank">${d}</a>` },
-                { title: "Authority / Resolved IP", data: "issuer" },
-                { title: "Logged Date", data: "logged_at" }
-            ];
-            createDataTable('subTableWrap', 'subTable', columns, json.data || []);
-        }
-
-        async function runSSLAnalysis() {
-            const val = $('#sslInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_ssl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "Certificate Issuer", data: "issuer" },
-                { title: "Expiration Date", data: "valid_to" },
-                { title: "Remaining Days", data: "days_left", render: d => `<span class="badge bg-info text-dark">${d}</span>` },
-                { title: "Status", data: "status", render: d => d === 'Valid' ? '<span class="badge bg-success">Valid</span>' : '<span class="badge bg-danger">Expired/Closed</span>' }
-            ];
-            createDataTable('sslTableWrap', 'sslTable', columns, json.data || []);
-        }
-
-        async function runVTAnalysis() {
-            const val = $('#vtInput').val().trim();
-            if(!val) return;
-            const res = await fetch('/scan_virustotal', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "Malicious Detections", data: "malicious" },
-                { title: "Suspicious", data: "suspicious" },
-                { title: "Harmless/Clean", data: "harmless" },
-                { title: "Verdict", data: "status", render: d => `<span class="badge bg-success">${d}</span>` }
-            ];
-            createDataTable('vtTableWrap', 'vtTable', columns, json.data || []);
-        }
-
-        $(document).ready(() => {
-            runDomainAnalysis();
-        });
-    </script>
-</body>
-</html>
+                title: "Domain - Hostname
