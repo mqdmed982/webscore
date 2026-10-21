@@ -40,6 +40,7 @@
         .score-hero { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fff; border-radius: 8px; padding: 25px; }
         .score-circle { width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; border: 4px solid rgba(255,255,255,0.2); }
         .score-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; height: 100%; }
+        .loading-state { text-align: center; padding: 40px; color: #6c757d; }
     </style>
 </head>
 <body>
@@ -126,7 +127,7 @@
 
         <!-- Main Body -->
         <div class="main-content">
-            <!-- 1. TAB: DOMAINS (8 CHECKS + ENRICHED) -->
+            <!-- 1. TAB: DOMAINS -->
             <div id="tabDomains" class="tab-section active">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-globe"></i> Domain Intelligence Scanner</h4>
@@ -278,7 +279,7 @@
                 </div>
             </div>
 
-            <!-- 3. TAB: IP ADDRESS DATA (17 COLUMNS) -->
+            <!-- 3. TAB: IP ADDRESS DATA -->
             <div id="tabIPs" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-diagram-3"></i> IP Intelligence & Listing History</h4>
@@ -288,7 +289,7 @@
                     <div class="card-header bg-light py-2"><strong>IP Address / Host Input</strong></div>
                     <div class="card-body p-2"><textarea id="ipInput" class="form-control" rows="3">51.79.8.192</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runIPAnalysis()"><i class="bi bi-search"></i> Query IP History</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeIP" onclick="runIPAnalysis()"><i class="bi bi-search"></i> Query IP History</button></div>
 
                 <div class="card shadow-sm border card-top-green">
                     <div class="card-body p-3">
@@ -298,7 +299,7 @@
                 </div>
             </div>
 
-            <!-- 4. TAB: SUBDOMAINS RECON (نقي وخفيف) -->
+            <!-- 4. TAB: SUBDOMAINS RECON -->
             <div id="tabSubdomains" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-search"></i> Subdomain Reconnaissance</h4>
@@ -306,16 +307,16 @@
                 </div>
                 <div class="card mb-3 shadow-sm border">
                     <div class="card-header bg-light py-2"><strong>Target Apex Domain</strong></div>
-                    <div class="card-body p-2"><input type="text" id="subInput" class="form-control" value="claude.ai"></div>
+                    <div class="card-body p-2"><input type="text" id="subInput" class="form-control" value="mlssoccer.com"></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runSubdomainAnalysis()"><i class="bi bi-search"></i> Extract Subdomains</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeSub" onclick="runSubdomainAnalysis()"><i class="bi bi-search"></i> Extract Subdomains</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">Discovered Live Subdomains</div>
                     <div class="card-body p-3"><div class="table-responsive" id="subTableWrap"></div></div>
                 </div>
             </div>
 
-            <!-- 5. TAB: CNAME & ALIAS INSPECTOR (أداة CNAME المستقلة) -->
+            <!-- 5. TAB: CNAME & ALIAS INSPECTOR -->
             <div id="tabCNAME" class="tab-section">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-arrow-left-right text-warning"></i> CNAME & Alias Inspector</h4>
@@ -323,7 +324,7 @@
                 </div>
                 <div class="card mb-3 shadow-sm border">
                     <div class="card-header bg-light py-2"><strong>Target Domain</strong></div>
-                    <div class="card-body p-2"><input type="text" id="cnameInput" class="form-control" value="claude.ai" placeholder="example.com"></div>
+                    <div class="card-body p-2"><input type="text" id="cnameInput" class="form-control" value="mlssoccer.com" placeholder="example.com"></div>
                 </div>
                 <div class="text-end mb-4"><button class="btn btn-warning text-dark fw-bold px-4 shadow-sm" id="btnAnalyzeCNAME" onclick="runCNAMEAnalysis()"><i class="bi bi-arrow-left-right"></i> Inspect CNAME Records</button></div>
                 <div class="card shadow-sm border">
@@ -342,7 +343,7 @@
                     <div class="card-header bg-light py-2"><strong>Mail Server IP or Domain</strong></div>
                     <div class="card-body p-2"><input type="text" id="dnsblInput" class="form-control" value="51.79.8.192"></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runDNSBLAnalysis()"><i class="bi bi-search"></i> Check 10+ Blacklists</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeDNSBL" onclick="runDNSBLAnalysis()"><i class="bi bi-search"></i> Check 10+ Blacklists</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">DNSBL Email Blacklist Results</div>
                     <div class="card-body p-3"><div class="table-responsive" id="dnsblTableWrap"></div></div>
@@ -359,7 +360,7 @@
                     <div class="card-header bg-light py-2"><strong>Domain Input</strong></div>
                     <div class="card-body p-2"><textarea id="compInput" class="form-control" rows="3">google.com&#10;awsglobalaccelerator.com</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runComplianceAnalysis()"><i class="bi bi-search"></i> Check Deliverability Score</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeCompliance" onclick="runComplianceAnalysis()"><i class="bi bi-search"></i> Check Deliverability Score</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">Google / Yahoo Sender Compliance Audit</div>
                     <div class="card-body p-3"><div class="table-responsive" id="compTableWrap"></div></div>
@@ -376,7 +377,7 @@
                     <div class="card-header bg-light py-2"><strong>Domain Input</strong></div>
                     <div class="card-body p-2"><textarea id="smtpInput" class="form-control" rows="3">google.com</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runSMTPAnalysis()"><i class="bi bi-search"></i> Test Port 25 & STARTTLS</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeSMTP" onclick="runSMTPAnalysis()"><i class="bi bi-search"></i> Test Port 25 & STARTTLS</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">SMTP Server Diagnostics</div>
                     <div class="card-body p-3"><div class="table-responsive" id="smtpTableWrap"></div></div>
@@ -393,7 +394,7 @@
                     <div class="card-header bg-light py-2"><strong>Domain Input</strong></div>
                     <div class="card-body p-2"><textarea id="bimiInput" class="form-control" rows="3">cnn.com&#10;paypal.com</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runBIMIAnalysis()"><i class="bi bi-search"></i> Inspect Brand Protocols</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeBIMI" onclick="runBIMIAnalysis()"><i class="bi bi-search"></i> Inspect Brand Protocols</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">BIMI & Security Policy Records</div>
                     <div class="card-body p-3"><div class="table-responsive" id="bimiTableWrap"></div></div>
@@ -410,7 +411,7 @@
                     <div class="card-header bg-light py-2"><strong>Domain Input</strong></div>
                     <div class="card-body p-2"><textarea id="sslInput" class="form-control" rows="3">github.com</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runSSLAnalysis()"><i class="bi bi-search"></i> Inspect SSL</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeSSL" onclick="runSSLAnalysis()"><i class="bi bi-search"></i> Inspect SSL</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">Certificate Status</div>
                     <div class="card-body p-3"><div class="table-responsive" id="sslTableWrap"></div></div>
@@ -427,7 +428,7 @@
                     <div class="card-header bg-light py-2"><strong>Domain Input</strong></div>
                     <div class="card-body p-2"><textarea id="vtInput" class="form-control" rows="3">google.com</textarea></div>
                 </div>
-                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" onclick="runVTAnalysis()"><i class="bi bi-search"></i> Run Multi-AV Scan</button></div>
+                <div class="text-end mb-4"><button class="btn btn-primary px-4 shadow-sm" id="btnAnalyzeVT" onclick="runVTAnalysis()"><i class="bi bi-search"></i> Run Multi-AV Scan</button></div>
                 <div class="card shadow-sm border">
                     <div class="card-header-blue">Multi-Engine Results</div>
                     <div class="card-body p-3"><div class="table-responsive" id="vtTableWrap"></div></div>
@@ -449,7 +450,6 @@
     <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
 
     <script>
-        // إيقاف أي Popup أو Alert تحذيري مزعج من DataTables نهائياً
         $.fn.dataTable.ext.errMode = 'none';
 
         function showTab(tabId, el) {
@@ -463,6 +463,17 @@
             if (!countryCode || countryCode.length !== 2) return '';
             const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
             return String.fromCodePoint(...codePoints) + ' ';
+        }
+
+        // دالة عرض حالة التحميل داخل الجدول
+        function showTableLoading(wrapperId, message = "Fetching intelligence data...") {
+            $('#' + wrapperId).html(`
+                <div class="loading-state">
+                    <div class="spinner-border text-primary" role="status" style="width: 2.5rem; height: 2.5rem;"></div>
+                    <div class="mt-3 fw-bold text-dark">${message}</div>
+                    <small class="text-muted">Querying intelligence nodes and resolving DNS records...</small>
+                </div>
+            `);
         }
 
         function createDataTable(wrapperId, tableId, columns, data, isScrollX = false) {
@@ -633,9 +644,19 @@
             const cfg = DOMAIN_CONFIGS[mode] || DOMAIN_CONFIGS['general'];
             $('#domainTableHeader').text(cfg.title);
 
-            const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val, mode: mode }) });
-            const json = await res.json();
-            createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || [], mode === 'general');
+            const btn = $('#btnAnalyzeDomain');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Analyzing...').prop('disabled', true);
+            showTableLoading('domainTableWrap', 'Analyzing domains against Spamhaus & DNS...');
+
+            try {
+                const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val, mode: mode }) });
+                const json = await res.json();
+                createDataTable('domainTableWrap', 'domTable', cfg.columns, json.data || [], mode === 'general');
+            } catch(e) {
+                createDataTable('domainTableWrap', 'domTable', cfg.columns, [], mode === 'general');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Analyze Domains').prop('disabled', false);
+            }
         }
 
         // ================= 2. ALL SCORES LOGIC =================
@@ -644,7 +665,7 @@
             if(!dom) return alert("المرجو إدخال دومين.");
 
             const btn = $('#btnCalculateScores');
-            btn.html('<span class="spinner-border spinner-border-sm"></span> Calculating...').prop('disabled', true);
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Calculating Scores...').prop('disabled', true);
 
             try {
                 const res = await fetch('/scan_domain_all_scores', {
@@ -694,93 +715,115 @@
             }
         }
 
-        // ================= 3. IP ADDRESS DATA LOGIC (17 COLUMNS) =================
+        // ================= 3. IP ADDRESS DATA LOGIC =================
         async function runIPAnalysis() {
             const val = $('#ipInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_ip', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ips: val }) });
-            const json = await res.json();
 
-            $('#ipTableWrap').html('<table id="ipTable" class="table table-bordered table-custom w-100 nowrap"><thead></thead><tbody></tbody></table>');
+            const btn = $('#btnAnalyzeIP');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Querying IP History...').prop('disabled', true);
+            showTableLoading('ipTableWrap', 'Fetching IP listing history from Spamhaus CIDR intelligence...');
 
-            const columns = [
-                { title: "IP Address", data: "ipaddress", defaultContent: "N/A" },
-                { title: "Dataset", data: "dataset", defaultContent: "N/A" },
-                { title: "ASN", data: "asn", defaultContent: "N/A" },
-                { title: "CC", data: "cc", defaultContent: "N/A" },
-                { title: "Listed", data: "listed", defaultContent: "N/A" },
-                { title: "Seen", data: "seen", defaultContent: "N/A" },
-                { title: "Valid Until", data: "valid_until", defaultContent: "N/A" },
-                { title: "Rule", data: "rule", defaultContent: "N/A" },
-                { title: "Botname", data: "botname", defaultContent: "N/A" },
-                { title: "Malpedia", data: "malpedia", defaultContent: "N/A" },
-                { title: "Detection", data: "detection", defaultContent: "N/A" },
-                { title: "Dst IP/Port", data: "dst_ip_port", defaultContent: "N/A" },
-                { title: "Heuristic", data: "heuristic", defaultContent: "N/A" },
-                { title: "Lat/ Lon", data: "lat_lon", defaultContent: "N/A" },
-                { title: "Protocol", data: "protocol", defaultContent: "N/A" },
-                { title: "Src IP/Port", data: "src_ip_port", defaultContent: "N/A" },
-                { title: "Helo", data: "helo", defaultContent: "N/A" }
-            ];
+            try {
+                const res = await fetch('/scan_ip', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ips: val }) });
+                const json = await res.json();
 
-            let theadHtml = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
-            $('#ipTable thead').html(theadHtml);
+                $('#ipTableWrap').html('<table id="ipTable" class="table table-bordered table-custom w-100 nowrap"><thead></thead><tbody></tbody></table>');
 
-            $('#ipTable').DataTable({
-                data: json.data || [],
-                columns: columns,
-                scrollX: true,
-                dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
-                buttons: [
-                    { extend: 'csvHtml5', text: 'CSV', className: 'btn btn-export' },
-                    { extend: 'pdfHtml5', text: 'PDF', className: 'btn btn-export', orientation: 'landscape', pageSize: 'A3' }
-                ]
-            });
+                const columns = [
+                    { title: "IP Address", data: "ipaddress", defaultContent: "N/A" },
+                    { title: "Dataset", data: "dataset", defaultContent: "N/A" },
+                    { title: "ASN", data: "asn", defaultContent: "N/A" },
+                    { title: "CC", data: "cc", defaultContent: "N/A" },
+                    { title: "Listed", data: "listed", defaultContent: "N/A" },
+                    { title: "Seen", data: "seen", defaultContent: "N/A" },
+                    { title: "Valid Until", data: "valid_until", defaultContent: "N/A" },
+                    { title: "Rule", data: "rule", defaultContent: "N/A" },
+                    { title: "Botname", data: "botname", defaultContent: "N/A" },
+                    { title: "Malpedia", data: "malpedia", defaultContent: "N/A" },
+                    { title: "Detection", data: "detection", defaultContent: "N/A" },
+                    { title: "Dst IP/Port", data: "dst_ip_port", defaultContent: "N/A" },
+                    { title: "Heuristic", data: "heuristic", defaultContent: "N/A" },
+                    { title: "Lat/ Lon", data: "lat_lon", defaultContent: "N/A" },
+                    { title: "Protocol", data: "protocol", defaultContent: "N/A" },
+                    { title: "Src IP/Port", data: "src_ip_port", defaultContent: "N/A" },
+                    { title: "Helo", data: "helo", defaultContent: "N/A" }
+                ];
+
+                let theadHtml = '<tr>' + columns.map(c => `<th>${c.title}</th>`).join('') + '</tr>';
+                $('#ipTable thead').html(theadHtml);
+
+                $('#ipTable').DataTable({
+                    data: json.data || [],
+                    columns: columns,
+                    scrollX: true,
+                    dom: '<"d-flex justify-content-between align-items-center mb-2"<"btn-group"B>f>rtip',
+                    buttons: [
+                        { extend: 'csvHtml5', text: 'CSV', className: 'btn btn-export' },
+                        { extend: 'pdfHtml5', text: 'PDF', className: 'btn btn-export', orientation: 'landscape', pageSize: 'A3' }
+                    ]
+                });
+            } catch(e) {
+                $('#ipTableWrap').html('<div class="text-danger text-center py-4">Failed to load IP history.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Query IP History').prop('disabled', false);
+            }
         }
 
-        // ================= 4. SUBDOMAINS LOGIC (خفيف ونقي) =================
+        // ================= 4. SUBDOMAINS LOGIC =================
         async function runSubdomainAnalysis() {
             const val = $('#subInput').val().trim();
             if(!val) return alert("المرجو إدخال دومين.");
 
-            const res = await fetch('/scan_subdomains', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ domain: val }) 
-            });
-            const json = await res.json();
+            const btn = $('#btnAnalyzeSub');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Extracting Subdomains...').prop('disabled', true);
+            showTableLoading('subTableWrap', 'Extracting hundreds of subdomains from Wayback, RapidDNS, crt.name & resolving live DNS...');
 
-            const columns = [
-                { 
-                    title: "Subdomain", 
-                    data: "subdomain", 
-                    defaultContent: "N/A",
-                    render: d => `<a href="https://${d}" target="_blank" class="fw-bold text-decoration-none">${d}</a>` 
-                },
-                { 
-                    title: "Resolved Live IP", 
-                    data: "ip", 
-                    defaultContent: "N/A",
-                    render: ip => `<code>${ip}</code>` 
-                },
-                { 
-                    title: "Status", 
-                    data: "status", 
-                    defaultContent: "Active",
-                    render: s => `<span class="badge bg-success">${s}</span>` 
-                }
-            ];
+            try {
+                const res = await fetch('/scan_subdomains', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ domain: val }) 
+                });
+                const json = await res.json();
 
-            createDataTable('subTableWrap', 'subTable', columns, json.data || [], false);
+                const columns = [
+                    { 
+                        title: "Subdomain", 
+                        data: "subdomain", 
+                        defaultContent: "N/A",
+                        render: d => `<a href="https://${d}" target="_blank" class="fw-bold text-decoration-none">${d}</a>` 
+                    },
+                    { 
+                        title: "Resolved Live IP", 
+                        data: "ip", 
+                        defaultContent: "N/A",
+                        render: ip => ip.includes('CNAME') ? `<code class="text-primary">${ip}</code>` : (ip.includes('Unresolved') ? `<span class="badge bg-secondary">${ip}</span>` : `<code>${ip}</code>`) 
+                    },
+                    { 
+                        title: "Status", 
+                        data: "status", 
+                        defaultContent: "Active",
+                        render: s => s.includes('Live IP') ? `<span class="badge bg-success">${s}</span>` : (s.includes('CNAME') ? `<span class="badge bg-info text-dark">${s}</span>` : `<span class="badge bg-secondary">${s}</span>`) 
+                    }
+                ];
+
+                createDataTable('subTableWrap', 'subTable', columns, json.data || [], false);
+            } catch(e) {
+                $('#subTableWrap').html('<div class="text-danger text-center py-4">Error discovering subdomains.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Extract Subdomains').prop('disabled', false);
+            }
         }
 
-        // ================= 5. CNAME INSPECTOR LOGIC (الأداة المستقلة) =================
+        // ================= 5. CNAME INSPECTOR LOGIC =================
         async function runCNAMEAnalysis() {
             const val = $('#cnameInput').val().trim();
             if(!val) return alert("المرجو إدخال دومين.");
 
             const btn = $('#btnAnalyzeCNAME');
-            btn.html('<span class="spinner-border spinner-border-sm"></span> Inspecting CNAMEs...').prop('disabled', true);
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Inspecting CNAMEs...').prop('disabled', true);
+            showTableLoading('cnameTableWrap', 'Inspecting CNAME aliases and testing for Subdomain Takeover...');
 
             try {
                 const res = await fetch('/scan_cname', { 
@@ -805,7 +848,7 @@
 
                 createDataTable('cnameTableWrap', 'cnameTable', columns, json.data || [], true);
             } catch (err) {
-                alert("حدث خطأ أثناء فحص CNAME.");
+                $('#cnameTableWrap').html('<div class="text-danger text-center py-4">Error inspecting CNAME records.</div>');
             } finally {
                 btn.html('<i class="bi bi-arrow-left-right"></i> Inspect CNAME Records').prop('disabled', false);
             }
@@ -815,98 +858,165 @@
         async function runDNSBLAnalysis() {
             const val = $('#dnsblInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_email_dnsbl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Blacklist Provider", data: "dnsbl" },
-                { title: "Target Queried", data: "target" },
-                { title: "Resolved IP", data: "ip", render: d => `<code>${d}</code>` },
-                { title: "Status", data: "status", render: d => d.includes('Listed') ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
-                { title: "Details", data: "details" }
-            ];
-            createDataTable('dnsblTableWrap', 'dnsblTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeDNSBL');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Checking Blacklists...').prop('disabled', true);
+            showTableLoading('dnsblTableWrap', 'Querying 10+ global anti-spam DNSBL servers concurrently...');
+
+            try {
+                const res = await fetch('/scan_email_dnsbl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Blacklist Provider", data: "dnsbl" },
+                    { title: "Target Queried", data: "target" },
+                    { title: "Resolved IP", data: "ip", render: d => `<code>${d}</code>` },
+                    { title: "Status", data: "status", render: d => d.includes('Listed') ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
+                    { title: "Details", data: "details" }
+                ];
+                createDataTable('dnsblTableWrap', 'dnsblTable', columns, json.data || []);
+            } catch(e) {
+                $('#dnsblTableWrap').html('<div class="text-danger text-center py-4">Error querying DNSBLs.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Check 10+ Blacklists').prop('disabled', false);
+            }
         }
 
         // ================= 7. COMPLIANCE LOGIC =================
         async function runComplianceAnalysis() {
             const val = $('#compInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_email_compliance', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "SPF Record", data: "spf", render: d => d === 'Pass' ? '<span class="badge bg-success">Pass</span>' : '<span class="badge bg-danger">Missing</span>' },
-                { title: "DMARC Policy", data: "dmarc" },
-                { title: "DKIM Key", data: "dkim", render: d => d.includes('Detected') ? '<span class="badge bg-success">Detected</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
-                { title: "rDNS / PTR", data: "ptr" },
-                { title: "Score", data: "score" },
-                { title: "Deliverability Verdict", data: "verdict", render: d => d.includes('PASS') ? `<span class="badge bg-success">${d}</span>` : `<span class="badge bg-danger">${d}</span>` }
-            ];
-            createDataTable('compTableWrap', 'compTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeCompliance');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Auditing Deliverability...').prop('disabled', true);
+            showTableLoading('compTableWrap', 'Auditing SPF, DKIM, DMARC policy enforcement, and rDNS PTR...');
+
+            try {
+                const res = await fetch('/scan_email_compliance', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Domain", data: "domain" },
+                    { title: "SPF Record", data: "spf", render: d => d === 'Pass' ? '<span class="badge bg-success">Pass</span>' : '<span class="badge bg-danger">Missing</span>' },
+                    { title: "DMARC Policy", data: "dmarc" },
+                    { title: "DKIM Key", data: "dkim", render: d => d.includes('Detected') ? '<span class="badge bg-success">Detected</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
+                    { title: "rDNS / PTR", data: "ptr" },
+                    { title: "Score", data: "score" },
+                    { title: "Deliverability Verdict", data: "verdict", render: d => d.includes('PASS') ? `<span class="badge bg-success">${d}</span>` : `<span class="badge bg-danger">${d}</span>` }
+                ];
+                createDataTable('compTableWrap', 'compTable', columns, json.data || []);
+            } catch(e) {
+                $('#compTableWrap').html('<div class="text-danger text-center py-4">Error running deliverability audit.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Check Deliverability Score').prop('disabled', false);
+            }
         }
 
         // ================= 8. SMTP HEALTH LOGIC =================
         async function runSMTPAnalysis() {
             const val = $('#smtpInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_smtp_health', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "MX Mail Server", data: "mx_host" },
-                { title: "SMTP 220 Banner", data: "banner" },
-                { title: "STARTTLS Encryption", data: "starttls", render: d => d.includes('Supported') ? '<span class="badge bg-success">Supported</span>' : '<span class="badge bg-warning text-dark">No TLS</span>' },
-                { title: "Latency (ms)", data: "latency" },
-                { title: "Connection Status", data: "status", render: d => d === 'Healthy' ? '<span class="badge bg-success">Healthy</span>' : '<span class="badge bg-danger">Closed</span>' }
-            ];
-            createDataTable('smtpTableWrap', 'smtpTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeSMTP');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Testing Port 25...').prop('disabled', true);
+            showTableLoading('smtpTableWrap', 'Connecting directly to MX port 25 and negotiating STARTTLS...');
+
+            try {
+                const res = await fetch('/scan_smtp_health', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Domain", data: "domain" },
+                    { title: "MX Mail Server", data: "mx_host" },
+                    { title: "SMTP 220 Banner", data: "banner" },
+                    { title: "STARTTLS Encryption", data: "starttls", render: d => d.includes('Supported') ? '<span class="badge bg-success">Supported</span>' : '<span class="badge bg-warning text-dark">No TLS</span>' },
+                    { title: "Latency (ms)", data: "latency" },
+                    { title: "Connection Status", data: "status", render: d => d === 'Healthy' ? '<span class="badge bg-success">Healthy</span>' : '<span class="badge bg-danger">Closed</span>' }
+                ];
+                createDataTable('smtpTableWrap', 'smtpTable', columns, json.data || []);
+            } catch(e) {
+                $('#smtpTableWrap').html('<div class="text-danger text-center py-4">Error testing SMTP connection.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Test Port 25 & STARTTLS').prop('disabled', false);
+            }
         }
 
         // ================= 9. BIMI & MTA-STS LOGIC =================
         async function runBIMIAnalysis() {
             const val = $('#bimiInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_email_advanced', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "BIMI Status", data: "bimi", render: d => d === 'Active' ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Not Configured</span>' },
-                { title: "Brand Logo SVG", data: "bimi_logo" },
-                { title: "MTA-STS Policy", data: "mta_sts", render: d => d === 'Enforced' ? '<span class="badge bg-success">Enforced</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
-                { title: "TLS Reporting (TLS-RPT)", data: "tls_rpt" }
-            ];
-            createDataTable('bimiTableWrap', 'bimiTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeBIMI');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Checking Protocols...').prop('disabled', true);
+            showTableLoading('bimiTableWrap', 'Checking BIMI default selector and MTA-STS policy records...');
+
+            try {
+                const res = await fetch('/scan_email_advanced', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Domain", data: "domain" },
+                    { title: "BIMI Status", data: "bimi", render: d => d === 'Active' ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Not Configured</span>' },
+                    { title: "Brand Logo SVG", data: "bimi_logo" },
+                    { title: "MTA-STS Policy", data: "mta_sts", render: d => d === 'Enforced' ? '<span class="badge bg-success">Enforced</span>' : '<span class="badge bg-warning text-dark">Missing</span>' },
+                    { title: "TLS Reporting (TLS-RPT)", data: "tls_rpt" }
+                ];
+                createDataTable('bimiTableWrap', 'bimiTable', columns, json.data || []);
+            } catch(e) {
+                $('#bimiTableWrap').html('<div class="text-danger text-center py-4">Error checking brand protocols.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Inspect Brand Protocols').prop('disabled', false);
+            }
         }
 
-        // ================= 10. SSL & VIRUSTOTAL LOGIC =================
+        // ================= 10. SSL LOGIC =================
         async function runSSLAnalysis() {
             const val = $('#sslInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_ssl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "Certificate Issuer", data: "issuer" },
-                { title: "Expiration Date", data: "valid_to" },
-                { title: "Remaining Days", data: "days_left", render: d => `<span class="badge bg-info text-dark">${d}</span>` },
-                { title: "Status", data: "status", render: d => d === 'Valid' ? '<span class="badge bg-success">Valid</span>' : '<span class="badge bg-danger">Expired/Closed</span>' }
-            ];
-            createDataTable('sslTableWrap', 'sslTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeSSL');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Inspecting SSL...').prop('disabled', true);
+            showTableLoading('sslTableWrap', 'Connecting to port 443 and validating SSL/TLS certificate chains...');
+
+            try {
+                const res = await fetch('/scan_ssl', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Domain", data: "domain" },
+                    { title: "Certificate Issuer", data: "issuer" },
+                    { title: "Expiration Date", data: "valid_to" },
+                    { title: "Remaining Days", data: "days_left", render: d => `<span class="badge bg-info text-dark">${d}</span>` },
+                    { title: "Status", data: "status", render: d => d === 'Valid' ? '<span class="badge bg-success">Valid</span>' : '<span class="badge bg-danger">Expired/Closed</span>' }
+                ];
+                createDataTable('sslTableWrap', 'sslTable', columns, json.data || []);
+            } catch(e) {
+                $('#sslTableWrap').html('<div class="text-danger text-center py-4">Error inspecting SSL.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Inspect SSL').prop('disabled', false);
+            }
         }
 
+        // ================= 11. VIRUSTOTAL LOGIC =================
         async function runVTAnalysis() {
             const val = $('#vtInput').val().trim();
             if(!val) return;
-            const res = await fetch('/scan_virustotal', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
-            const json = await res.json();
-            const columns = [
-                { title: "Domain", data: "domain" },
-                { title: "Malicious Detections", data: "malicious" },
-                { title: "Suspicious", data: "suspicious" },
-                { title: "Harmless/Clean", data: "harmless" },
-                { title: "Verdict", data: "status", render: d => `<span class="badge bg-success">${d}</span>` }
-            ];
-            createDataTable('vtTableWrap', 'vtTable', columns, json.data || []);
+
+            const btn = $('#btnAnalyzeVT');
+            btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Scanning AV Engines...').prop('disabled', true);
+            showTableLoading('vtTableWrap', 'Querying 70+ Antivirus engines across threat feeds...');
+
+            try {
+                const res = await fetch('/scan_virustotal', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domains: val }) });
+                const json = await res.json();
+                const columns = [
+                    { title: "Domain", data: "domain" },
+                    { title: "Malicious Detections", data: "malicious" },
+                    { title: "Suspicious", data: "suspicious" },
+                    { title: "Harmless/Clean", data: "harmless" },
+                    { title: "Verdict", data: "status", render: d => `<span class="badge bg-success">${d}</span>` }
+                ];
+                createDataTable('vtTableWrap', 'vtTable', columns, json.data || []);
+            } catch(e) {
+                $('#vtTableWrap').html('<div class="text-danger text-center py-4">Error running AV scan.</div>');
+            } finally {
+                btn.html('<i class="bi bi-search"></i> Run Multi-AV Scan').prop('disabled', false);
+            }
         }
 
         $(document).ready(() => {
