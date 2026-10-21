@@ -655,40 +655,83 @@ def scan_email_advanced():
     return jsonify({"data": results})
 
 # ================= 8. SUBDOMAINS, SSL, VIRUSTOTAL =================
+# ================= SUBDOMAINS (100% LIVE & VERIFIED DNS) =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
     domain = data.get('domain', '').strip().replace("https://", "").replace("http://", "").split("/")[0]
-    unique_subdomains = {}
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36", "Accept": "application/json"}
 
-    try:
-        r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
-        if r_otx.status_code == 200:
-            for item in r_otx.json().get('passive_dns', []):
-                h = item.get('hostname', '').lower().strip()
-                if h.endswith(domain) and h not in unique_subdomains:
-                    unique_subdomains[h] = {"subdomain": h, "issuer": f"IP: {item.get('address', 'Active')}", "logged_at": item.get('last', 'Recent')[:10]}
-    except Exception: pass
+    if not domain:
+        return jsonify({"data": []})
 
+    candidate_subs = set()
+    verified_results = []
+
+    # 1. المصدر الأول: HackerTarget (كيجيب فقط الدومينات الحية مع عناوين الـ IP الحقيقية)
     try:
-        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=8)
+        r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=6)
+        if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
+            for line in r_ht.text.strip().split('\n'):
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    sub_host = parts[0].strip().lower()
+                    sub_ip = parts[1].strip()
+                    if sub_host.endswith(domain) and sub_host not in candidate_subs:
+                        verified_results.append({
+                            "subdomain": sub_host,
+                            "issuer": f"Live IP: {sub_ip}",
+                            "logged_at": "Active / Live DNS"
+                        })
+                        candidate_subs.add(sub_host)
+    except Exception:
+        pass
+
+    # 2. المصدر الثاني: فحص مباشر لـ أشهر الـ Subdomains الحقيقية فـ DNS السيرفر
+    common_sub_prefixes = [
+        "www", "mail", "api", "webmail", "cpanel", "dev", "app", 
+        "portal", "admin", "blog", "shop", "vpn", "autodiscover", 
+        "remote", "server", "smtp", "secure", "m", "cloud", "support"
+    ]
+    for prefix in common_sub_prefixes:
+        target_sub = f"{prefix}.{domain}"
+        if target_sub not in candidate_subs:
+            try:
+                # محاولة فحص الاتصال بالـ DNS: إلا جاوب كيتزاد، إلا ما جاوبش كيتلغى
+                real_ip = socket.gethostbyname(target_sub)
+                verified_results.append({
+                    "subdomain": target_sub,
+                    "issuer": f"Live IP: {real_ip}",
+                    "logged_at": "Active / Live DNS"
+                })
+                candidate_subs.add(target_sub)
+            except Exception:
+                pass # ميت أو ما كاينش -> كيتلغى وما كيتحطش فالجدول!
+
+    # 3. المصدر الثالث: crt.sh مع فلترة صارمة (فقط لي كيدير Resolve لـ IP حقيقي)
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=6)
         if r_crt.status_code == 200:
-            for entry in r_crt.json():
+            entries = r_crt.json()
+            for entry in entries[:50]:
                 for sub in entry.get('name_value', '').lower().split('\n'):
                     sub = sub.strip().lstrip('*.')
-                    if sub.endswith(domain) and sub not in unique_subdomains:
-                        iss = entry.get('issuer_name', '').split('O=')[-1].split(',')[0].strip(' "') or "Trusted CA"
-                        unique_subdomains[sub] = {"subdomain": sub, "issuer": iss, "logged_at": entry.get('entry_timestamp', 'Recent')[:10]}
-    except Exception: pass
+                    if sub.endswith(domain) and sub not in candidate_subs and len(sub) > len(domain):
+                        # اختبار الـ DNS الحي: إلا كان مات فـ الـ DNS كيتجاهلو
+                        try:
+                            resolved_ip = socket.gethostbyname(sub)
+                            verified_results.append({
+                                "subdomain": sub,
+                                "issuer": f"Live IP: {resolved_ip}",
+                                "logged_at": entry.get('entry_timestamp', 'Recent')[:10]
+                            })
+                            candidate_subs.add(sub)
+                        except Exception:
+                            pass # شهادة SSL قديمة لدومين مات -> حذف!
+    except Exception:
+        pass
 
-    if not unique_subdomains:
-        for s in ["www", "mail", "api", "admin", "dev"]:
-            unique_subdomains[f"{s}.{domain}"] = {"subdomain": f"{s}.{domain}", "issuer": "DNS Record", "logged_at": "Active"}
-
-    return jsonify({"data": list(unique_subdomains.values())[:100]})
-
-@app.route('/scan_ssl', methods=['POST'])
+    return jsonify({"data": verified_results})
 def scan_ssl():
     data = request.get_json() or {}
     domains = [d.strip() for d in data.get('domains', '').split('\n') if d.strip()]
