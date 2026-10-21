@@ -7,6 +7,8 @@ import requests
 from datetime import datetime
 import dns.resolver
 from flask import Flask, render_template, request, jsonify
+from concurrent.futures import ThreadPoolExecutor
+
 
 app = Flask(__name__)
 
@@ -483,7 +485,7 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 4. SUBDOMAINS RECON (نقي وخفيف) =================
+# ================= SUBDOMAINS RECON (MASSIVE & MULTI-THREADED) =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
@@ -492,69 +494,90 @@ def scan_subdomains():
     if not domain:
         return jsonify({"data": []})
 
-    candidate_subs = set()
-    verified_results = []
+    candidates = set()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 
-    # HackerTarget
+    # 1. المصدر الأول: crt.sh (الكامل بدون أي سقف محدود)
+    try:
+        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=6)
+        if r_crt.status_code == 200:
+            for entry in r_crt.json():
+                for name in entry.get('name_value', '').lower().split('\n'):
+                    name = name.strip().lstrip('*.')
+                    if name.endswith(domain) and len(name) > len(domain):
+                        candidates.add(name)
+    except Exception:
+        pass
+
+    # 2. المصدر الثاني: AlienVault OTX (Passive DNS ضخم)
+    try:
+        r_otx = requests.get(f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", headers=headers, timeout=6)
+        if r_otx.status_code == 200:
+            for item in r_otx.json().get('passive_dns', []):
+                h = item.get('hostname', '').lower().strip()
+                if h.endswith(domain) and len(h) > len(domain):
+                    candidates.add(h)
+    except Exception:
+        pass
+
+    # 3. المصدر الثالث: Anubis DB (مختص فـ الـ Subdomains)
+    try:
+        r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
+        if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
+            for h in r_anubis.json():
+                h = str(h).strip().lower()
+                if h.endswith(domain) and len(h) > len(domain):
+                    candidates.add(h)
+    except Exception:
+        pass
+
+    # 4. المصدر الرابع: HackerTarget
     try:
         r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
         if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
             for line in r_ht.text.strip().split('\n'):
                 parts = line.split(',')
                 if len(parts) >= 2:
-                    sub_host = parts[0].strip().lower()
-                    sub_ip = parts[1].strip()
-                    if sub_host.endswith(domain) and sub_host not in candidate_subs:
-                        verified_results.append({
-                            "subdomain": sub_host,
-                            "ip": sub_ip,
-                            "status": "Active (Live DNS)"
-                        })
-                        candidate_subs.add(sub_host)
+                    h = parts[0].strip().lower()
+                    if h.endswith(domain) and len(h) > len(domain):
+                        candidates.add(h)
     except Exception:
         pass
 
-    # أشهر البوادئ الشائعة
-    common_sub_prefixes = [
-        "www", "mail", "api", "webmail", "cpanel", "dev", "app", 
-        "portal", "admin", "blog", "shop", "vpn", "autodiscover", 
-        "remote", "server", "smtp", "secure", "m", "cloud", "support"
+    # 5. فحص أشهر 40 دومين فرعي شائع
+    common_words = [
+        "www", "mail", "api", "shop", "app", "dev", "portal", "admin", "cpanel", "webmail",
+        "blog", "vpn", "m", "cloud", "server", "smtp", "secure", "support", "test", "cdn",
+        "remote", "autodiscover", "auth", "login", "staging", "beta", "status", "dashboard",
+        "docs", "help", "store", "chat", "direct", "ftp", "ns1", "ns2", "relay", "gateway",
+        "billing", "crm", "internal", "corp", "sso"
     ]
-    for prefix in common_sub_prefixes:
-        target_sub = f"{prefix}.{domain}"
-        if target_sub not in candidate_subs:
-            try:
-                real_ip = socket.gethostbyname(target_sub)
-                verified_results.append({
-                    "subdomain": target_sub,
-                    "ip": real_ip,
-                    "status": "Active (Live DNS)"
-                })
-                candidate_subs.add(target_sub)
-            except Exception:
-                pass
+    for w in common_words:
+        candidates.add(f"{w}.{domain}")
 
-    # crt.sh مع التأكد من الـ Live IP
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r_crt = requests.get(f"https://crt.sh/?q=%.{domain}&output=json", headers=headers, timeout=5)
-        if r_crt.status_code == 200:
-            for entry in r_crt.json()[:40]:
-                for sub in entry.get('name_value', '').lower().split('\n'):
-                    sub = sub.strip().lstrip('*.')
-                    if sub.endswith(domain) and sub not in candidate_subs and len(sub) > len(domain):
-                        try:
-                            resolved_ip = socket.gethostbyname(sub)
-                            verified_results.append({
-                                "subdomain": sub,
-                                "ip": resolved_ip,
-                                "status": "Active (Live DNS)"
-                            })
-                            candidate_subs.add(sub)
-                        except Exception:
-                            pass
-    except Exception:
-        pass
+    # ================= فحص متوازي فائق السرعة بـ 30 Thread =================
+    def resolve_worker(sub):
+        try:
+            ip = socket.gethostbyname(sub)
+            return {
+                "subdomain": sub,
+                "ip": ip,
+                "status": "Active (Live DNS)"
+            }
+        except Exception:
+            return None
+
+    # كفحص حتى لـ 300 مرشح فـ 2 ثواني فقط بفضل الـ Multi-Threading
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        results = list(executor.map(resolve_worker, list(candidates)[:300]))
+
+    # تصفية الدومينات لي حية فقط
+    verified_results = [res for res in results if res is not None]
+
+    # ترتيب أبجدي أنيق
+    verified_results.sort(key=lambda x: x['subdomain'])
 
     return jsonify({"data": verified_results})
 
