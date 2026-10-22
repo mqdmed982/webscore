@@ -300,7 +300,7 @@ def scan_domain_all_scores():
         }
     })
 
-# ================= 2. DOMAINS SCANNER (8 CHECKS + ENRICHED) =================
+# ================= DOMAINS SCANNER (MULTI-THREADED BATCHES) =================
 @app.route('/scan', methods=['POST'])
 def scan_domains():
     try:
@@ -310,10 +310,11 @@ def scan_domains():
 
         domains = [d.strip() for d in raw_domains.split('\n') if d.strip()]
         token = get_auth_token()
-        results = []
 
-        for domain in domains:
+        def process_single_domain(domain):
             clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
+            if not clean:
+                return None
 
             if mode == 'general':
                 res = fetch_sia(f"{clean}", token) or {}
@@ -342,7 +343,7 @@ def scan_domains():
                 else:
                     verdict = "Clean / Low Risk"
 
-                results.append({
+                return {
                     "domain": clean,
                     "verdict": verdict,
                     "domain_age": age_str,
@@ -363,61 +364,86 @@ def scan_domains():
                     },
                     "score": score,
                     "clusters": (res.get("clusters") or {}).get("auth", "N/A")
-                })
+                }
 
             elif mode == 'reputation_dim':
                 res = fetch_sia(f"{clean}", token) or {}
                 score = res.get("score", 0)
                 threat = "High" if score > 70 else ("Medium" if score > 30 else "Low")
-                results.append({
+                return {
                     "domain": clean,
                     "score": score,
                     "email_threat": "Listed" if res.get("abused") else threat,
                     "web_threat": "Suspicious" if "suspicious" in (res.get("tags") or []) else "Clean",
                     "phishing": "Malicious" if "phishing" in (res.get("tags") or []) else "Clean",
                     "malware": "Malicious" if "malware" in (res.get("tags") or []) else "Clean"
-                })
+                }
+
             elif mode == 'domain_context':
                 res = fetch_sia(f"{clean}", token) or {}
                 whois_info = res.get("whois") or {}
-                results.append({
+                return {
                     "domain": clean,
                     "registrar": whois_info.get("registrar", "Cloudflare / Clean"),
                     "nameservers": "ns1.nameserver.com, ns2.nameserver.com",
                     "ips": "Resolved via DNS",
                     "asn": "Active CDN / Hosting"
-                })
+                }
+
             elif mode == 'blacklist':
                 res = fetch_sia(f"{clean}", token) or {}
                 is_abused = res.get("abused", False)
-                results.append({
+                return {
                     "domain": clean,
                     "dbl": "Listed" if is_abused else "Clean",
                     "zbl": "Clean",
                     "detection": "Threat Observed" if is_abused else "Clean Dataset",
                     "code": "127.0.1.2" if is_abused else "None"
-                })
+                }
+
             elif mode == 'domain_senders':
                 senders = fetch_sia(f"{clean}/senders", token)
                 if isinstance(senders, list) and len(senders) > 0:
-                    for s in senders:
-                        results.append({
-                            "domain": clean,
-                            "ip": s.get("ip", "N/A"),
-                            "helo": s.get("helo") or "None",
-                            "last_seen": format_ts(s.get("last-seen")),
-                            "score": s.get("score", 0)
-                        })
+                    return [{
+                        "domain": clean,
+                        "ip": s.get("ip", "N/A"),
+                        "helo": s.get("helo") or "None",
+                        "last_seen": format_ts(s.get("last-seen")),
+                        "score": s.get("score", 0)
+                    } for s in senders]
                 else:
-                    results.append({"domain": clean, "ip": "No Senders Observed", "helo": "None", "last_seen": "N/A", "score": 0})
+                    return [{
+                        "domain": clean, "ip": "No Senders Observed", "helo": "None", "last_seen": "N/A", "score": 0
+                    }]
+
             elif mode == 'a_record':
-                results.append({"domain": clean, "ip": "Resolved via DNS", "ptr": clean, "ip_rep": "Neutral (0/100)", "status": "Active"})
+                return {
+                    "domain": clean, "ip": "Resolved via DNS", "ptr": clean, "ip_rep": "Neutral (0/100)", "status": "Active"
+                }
             elif mode == 'ns_rep':
-                results.append({"domain": clean, "primary_ns": f"ns.{clean}", "ns_ip": "Auto-resolved", "ns_score": 0, "status": "Verified"})
+                return {
+                    "domain": clean, "primary_ns": f"ns.{clean}", "ns_ip": "Auto-resolved", "ns_score": 0, "status": "Verified"
+                }
             elif mode == 'hostnames':
-                results.append({"domain": clean, "hostname": clean, "type": "Observed Hostname", "status": "Clean"})
+                return {
+                    "domain": clean, "hostname": clean, "type": "Observed Hostname", "status": "Clean"
+                }
+            return None
+
+        # فحص متوازي بـ 25 خيط لسرعة قياسية
+        results = []
+        with ThreadPoolExecutor(max_workers=25) as executor:
+            raw_results = list(executor.map(process_single_domain, domains))
+
+        for r in raw_results:
+            if r is not None:
+                if isinstance(r, list):
+                    results.extend(r)
+                else:
+                    results.append(r)
 
         return jsonify({"mode": mode, "data": results})
+
     except Exception as e:
         print("scan_domains error:", e)
         return jsonify({"mode": "general", "data": []})
