@@ -158,11 +158,11 @@ def check_dmarc_protection(domain):
 def check_http_live(domain):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        r = requests.head(f"https://{domain}", timeout=2.5, allow_redirects=True, headers=headers)
+        r = requests.head(f"https://{domain}", timeout=2.0, allow_redirects=True, headers=headers)
         return f"{r.status_code} OK" if r.status_code == 200 else f"{r.status_code}"
     except Exception:
         try:
-            r = requests.head(f"http://{domain}", timeout=2.0, allow_redirects=True, headers=headers)
+            r = requests.head(f"http://{domain}", timeout=1.5, allow_redirects=True, headers=headers)
             return f"{r.status_code} OK" if r.status_code == 200 else f"{r.status_code}"
         except Exception:
             return "Offline / Down"
@@ -300,7 +300,7 @@ def scan_domain_all_scores():
         }
     })
 
-# ================= DOMAINS SCANNER (MULTI-THREADED BATCHES) =================
+# ================= 2. DOMAINS SCANNER (MULTI-THREADED BATCHES) =================
 @app.route('/scan', methods=['POST'])
 def scan_domains():
     try:
@@ -525,7 +525,7 @@ def scan_subdomains():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # 1. المصدر الأول: crt.name API (أسرع قاعدة بيانات عالمية لشهادات SSL بـ 5.7 مليار دومين وبدون سقف)
+    # 1. crt.name API (5.7 مليار دومين بدون حجب وبدون سقف)
     try:
         r_crtname = requests.get(f"https://crt.name/v1/search?apex={domain}", headers=headers, timeout=6)
         if r_crtname.status_code == 200:
@@ -536,7 +536,7 @@ def scan_subdomains():
     except Exception as e:
         print("crt.name error:", e)
 
-    # 2. المصدر الثاني: Subdomain Center API (مفتوح ومباشر)
+    # 2. Subdomain Center API
     try:
         r_sc = requests.get(f"https://api.subdomain.center/?domain={domain}", headers=headers, timeout=6)
         if r_sc.status_code == 200 and isinstance(r_sc.json(), list):
@@ -547,7 +547,7 @@ def scan_subdomains():
     except Exception as e:
         print("Subdomain Center error:", e)
 
-    # 3. المصدر الثالث: Wayback Machine CDX API بـ HTTPS
+    # 3. Wayback Machine CDX API (HTTPS)
     try:
         wb_url = f"https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=3000"
         r_wb = requests.get(wb_url, headers=headers, timeout=7)
@@ -563,7 +563,7 @@ def scan_subdomains():
     except Exception as e:
         print("Wayback error:", e)
 
-    # 4. المصدر الرابع: Anubis DB
+    # 4. Anubis DB
     try:
         r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
         if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
@@ -574,7 +574,7 @@ def scan_subdomains():
     except Exception as e:
         pass
 
-    # 5. المصدر الخامس: HackerTarget
+    # 5. HackerTarget
     try:
         r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
         if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
