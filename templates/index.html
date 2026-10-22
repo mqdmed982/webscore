@@ -127,7 +127,7 @@
 
         <!-- Main Body -->
         <div class="main-content">
-            <!-- 1. TAB: DOMAINS -->
+            <!-- 1. TAB: DOMAINS (BATCH PROCESSING ENABLED) -->
             <div id="tabDomains" class="tab-section active">
                 <div class="mb-3">
                     <h4 class="text-primary fw-bold"><i class="bi bi-globe"></i> Domain Intelligence Scanner</h4>
@@ -135,8 +135,8 @@
                 </div>
 
                 <div class="card mb-3 shadow-sm border">
-                    <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input</strong></div>
-                    <div class="card-body p-2"><textarea id="domainInput" class="form-control" rows="3">awsglobalaccelerator.com&#10;google.com</textarea></div>
+                    <div class="card-header bg-light py-2"><strong><i class="bi bi-table"></i> Domain Input (Supports 100+ Bulk Domains)</strong></div>
+                    <div class="card-body p-2"><textarea id="domainInput" class="form-control" rows="4">awsglobalaccelerator.com&#10;google.com</textarea></div>
                 </div>
 
                 <div class="row g-3 mb-3">
@@ -465,7 +465,6 @@
             return String.fromCodePoint(...codePoints) + ' ';
         }
 
-        // دالة عرض حالة التحميل داخل الجدول
         function showTableLoading(wrapperId, message = "Fetching intelligence data...") {
             $('#' + wrapperId).html(`
                 <div class="loading-state">
@@ -500,7 +499,143 @@
             });
         }
 
-       // ================= 1. DOMAINS LOGIC (BATCH PROCESSING) =================
+        // ================= 1. DOMAINS LOGIC (BATCH PROCESSING) =================
+        const DOMAIN_CONFIGS = {
+            general: {
+                title: "Domain - General Overview (Enriched with 8 Insights)",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { 
+                        title: "Risk Verdict", 
+                        data: "verdict", 
+                        defaultContent: "Clean",
+                        render: v => {
+                            if (v.includes('Malicious')) return `<span class="badge bg-danger">${v}</span>`;
+                            if (v.includes('Suspicious')) return `<span class="badge bg-warning text-dark">${v}</span>`;
+                            return `<span class="badge bg-success">${v}</span>`;
+                        }
+                    },
+                    { 
+                        title: "Domain Age", 
+                        data: "domain_age", 
+                        defaultContent: "N/A",
+                        render: a => a.includes('Fresh') ? `<span class="badge bg-danger">${a}</span>` : `<span class="badge bg-info text-dark">${a}</span>`
+                    },
+                    { 
+                        title: "Expires In", 
+                        data: "expires_in", 
+                        defaultContent: "N/A",
+                        render: e => e.includes('⚠️') ? `<span class="text-danger fw-bold">${e}</span>` : `<span class="text-secondary">${e}</span>`
+                    },
+                    { 
+                        title: "HTTP Status", 
+                        data: "http_status", 
+                        defaultContent: "N/A",
+                        render: s => s.includes('200') ? `<span class="badge bg-success">${s}</span>` : `<span class="badge bg-secondary">${s}</span>`
+                    },
+                    { title: "Hosting / ASN", data: "hosting_asn", defaultContent: "N/A" },
+                    { 
+                        title: "Country", 
+                        data: "country", 
+                        defaultContent: "N/A",
+                        render: (c, type, row) => `${getFlagEmoji(row.country_code)}${c}`
+                    },
+                    { 
+                        title: "MX Provider", 
+                        data: "mx_provider", 
+                        defaultContent: "N/A",
+                        render: m => {
+                            if (m.includes('Google')) return `<span class="badge bg-primary">${m}</span>`;
+                            if (m.includes('Microsoft')) return `<span class="badge bg-info text-dark">${m}</span>`;
+                            if (m === 'No MX') return `<span class="badge bg-secondary">No MX</span>`;
+                            return `<span class="badge bg-dark">${m}</span>`;
+                        }
+                    },
+                    { 
+                        title: "DMARC", 
+                        data: "dmarc_protection", 
+                        defaultContent: "N/A",
+                        render: d => d.includes('Protected') ? `<span class="badge bg-success">${d}</span>` : `<span class="badge bg-danger">${d}</span>`
+                    },
+                    { title: "Tags", data: "tags", defaultContent: "[]", render: d => `<code>${JSON.stringify(d || [])}</code>` },
+                    { title: "Abused", data: "abused", defaultContent: false, render: d => d ? '<span class="text-danger fw-bold">true</span>' : '<span class="text-secondary">false</span>' },
+                    { title: "SIA Score", data: "score", defaultContent: "0" },
+                    { title: "Whois", data: "whois", defaultContent: {}, render: w => `<ul class="sub-list"><li><b>created:</b> ${(w && w.created) || 'N/A'}</li><li><b>expires:</b> ${(w && w.expires) || 'N/A'}</li><li><b>registrar:</b> ${(w && w.registrar) || 'N/A'}</li></ul>` },
+                    { title: "Clusters", data: "clusters", defaultContent: "N/A", render: c => `<ul class="sub-list"><li><b>auth:</b> <span class="hash-auth">${c || 'N/A'}</span></li></ul>` }
+                ]
+            },
+            reputation_dim: {
+                title: "Domain - Reputation Dimensions",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Score", data: "score", defaultContent: "0" },
+                    { title: "Email Threat", data: "email_threat", defaultContent: "Clean" },
+                    { title: "Web Threat", data: "web_threat", defaultContent: "Clean" },
+                    { title: "Phishing", data: "phishing", defaultContent: "Clean" },
+                    { title: "Malware", data: "malware", defaultContent: "Clean" }
+                ]
+            },
+            domain_context: {
+                title: "Domain - Domain Context",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Registrar", data: "registrar", defaultContent: "N/A" },
+                    { title: "Nameservers", data: "nameservers", defaultContent: "N/A" },
+                    { title: "Resolved IPs", data: "ips", defaultContent: "N/A" },
+                    { title: "ASN", data: "asn", defaultContent: "N/A" }
+                ]
+            },
+            blacklist: {
+                title: "Domain - Blacklist Listing",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "DBL", data: "dbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
+                    { title: "ZBL", data: "zbl", defaultContent: "Clean", render: d => d === 'Listed' ? '<span class="badge bg-danger">Listed</span>' : '<span class="badge bg-success">Clean</span>' },
+                    { title: "Detection", data: "detection", defaultContent: "Clean" },
+                    { title: "Return Code", data: "code", defaultContent: "None" }
+                ]
+            },
+            domain_senders: {
+                title: "Domain Senders",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "IP", data: "ip", defaultContent: "N/A" },
+                    { title: "HELO", data: "helo", defaultContent: "None" },
+                    { title: "Last Seen", data: "last_seen", defaultContent: "N/A" },
+                    { title: "Score", data: "score", defaultContent: "0" }
+                ]
+            },
+            a_record: {
+                title: "Domain - A Record Reputation",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "A Record (IP)", data: "ip", defaultContent: "N/A" },
+                    { title: "PTR (Reverse DNS)", data: "ptr", defaultContent: "N/A" },
+                    { title: "IP Reputation", data: "ip_rep", defaultContent: "N/A" },
+                    { title: "Status", data: "status", defaultContent: "Active" }
+                ]
+            },
+            ns_rep: {
+                title: "Domain - Nameserver Reputation",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Primary NS", data: "primary_ns", defaultContent: "N/A" },
+                    { title: "NS IP", data: "ns_ip", defaultContent: "N/A" },
+                    { title: "NS Score", data: "ns_score", defaultContent: "0" },
+                    { title: "Status", data: "status", defaultContent: "Verified" }
+                ]
+            },
+            hostnames: {
+                title: "Domain - Hostnames Listed",
+                columns: [
+                    { title: "Domain", data: "domain", defaultContent: "N/A" },
+                    { title: "Hostname", data: "hostname", defaultContent: "N/A" },
+                    { title: "Record Type", data: "type", defaultContent: "Observed" },
+                    { title: "Status", data: "status", defaultContent: "Clean" }
+                ]
+            }
+        };
+
         async function runDomainAnalysis() {
             const rawVal = $('#domainInput').val().trim();
             if(!rawVal) return alert("المرجو إدخال دومين.");
@@ -516,11 +651,9 @@
             btn.prop('disabled', true);
             showTableLoading('domainTableWrap', `Starting batch analysis for ${allDomains.length} domains...`);
 
-            // إنشاء الجدول فارغاً ومستعداً لاستقبال الدفعات
             createDataTable('domainTableWrap', 'domTable', cfg.columns, [], mode === 'general');
             const dataTableApi = $('#domTable').DataTable();
 
-            // تقسيم اللستة لدفعات (Chunks) بـ 25 دومين
             const chunkSize = 25;
             let processedCount = 0;
 
@@ -537,7 +670,6 @@
                     const json = await res.json();
 
                     if (json.data && json.data.length > 0) {
-                        // إضافة الدفعة مباشرة للجدول بدون مسح القديم
                         dataTableApi.rows.add(json.data).draw(false);
                     }
                 } catch(err) {
@@ -549,7 +681,7 @@
 
             btn.html('<i class="bi bi-search"></i> Analyze Domains').prop('disabled', false);
         }
-        
+
         // ================= 2. ALL SCORES LOGIC =================
         async function runAllScoresAnalysis() {
             const dom = $('#allScoreDomainInput').val().trim();
