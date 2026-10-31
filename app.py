@@ -909,3 +909,4 @@ def scan_virustotal():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
