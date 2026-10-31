@@ -69,17 +69,22 @@ def fetch_ip_history(ip, token):
     except Exception:
         return []
 
-# ================= OPENPAGERANK (BULK DOMAIN AUTHORITY) =================
+# ================= OPENPAGERANK (BULK DOMAIN AUTHORITY - FIXED) =================
 def fetch_bulk_openpagerank(domains):
-    """فحص حتى لـ 100 دومين فـ ريكوست واحد فـ ثانية وحدة عبر OpenPageRank"""
     if not domains:
         return {}
+
     url = "https://openpagerank.com/api/v1.0/getPageRank"
-    headers = {"API-OPR": OPENPAGERANK_KEY}
-    params = [("domains[]", d.lower()) for d in domains[:100]]
+    headers = {
+        "API-OPR": OPENPAGERANK_KEY.strip(),
+        "User-Agent": "Mozilla/5.0"
+    }
+    params = [("domains[]", d.lower().strip()) for d in domains[:100]]
 
     try:
-        r = requests.get(url, params=params, headers=headers, timeout=7)
+        r = requests.get(url, params=params, headers=headers, timeout=8)
+        print("OpenPageRank HTTP Status:", r.status_code) # باش يبان ليك فـ Render Logs
+
         if r.status_code == 200:
             resp = r.json().get("response", [])
             results = {}
@@ -87,8 +92,10 @@ def fetch_bulk_openpagerank(domains):
                 dom = item.get("domain", "").lower()
                 pr_dec = item.get("page_rank_decimal") or 0
                 rank = item.get("rank")
+                
+                # تحويل الرتبة والسكور
                 rank_str = f"#{int(rank):,}" if rank and str(rank).isdigit() else "Unranked"
-                da_score = int(round(pr_dec * 10)) if pr_dec else 0
+                da_score = int(round(float(pr_dec) * 10)) if pr_dec else 0
 
                 verdict = "Low / Fresh"
                 if da_score >= 80: verdict = "Elite Authority"
@@ -97,13 +104,16 @@ def fetch_bulk_openpagerank(domains):
 
                 results[dom] = {
                     "da_score": da_score,
-                    "pagerank": round(pr_dec, 2) if pr_dec else 0,
+                    "pagerank": round(float(pr_dec), 2) if pr_dec else 0,
                     "global_rank": rank_str,
                     "verdict": verdict
                 }
             return results
+        else:
+            print("OpenPageRank Error Response:", r.text)
     except Exception as e:
-        print("OpenPageRank error:", e)
+        print("OpenPageRank Exception:", e)
+
     return {}
 
 # ================= HELPER FUNCTIONS =================
