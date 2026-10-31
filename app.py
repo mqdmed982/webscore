@@ -12,10 +12,11 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# إعدادات حساب Spamhaus
+# إعدادات الحسابات والـ API Keys
 SIA_USERNAME = os.getenv("SIA_USERNAME", "mtrmdgrl@75848703")
 SIA_PASSWORD = os.getenv("SIA_PASSWORD", "")
 VT_API_KEY = os.getenv("VT_API_KEY", "")
+OPENPAGERANK_KEY = os.getenv("OPENPAGERANK_KEY", "0f458b9bfaf7da7183b0")
 
 def format_ts(ts):
     """تحويل Unix Timestamp لتاريخ YYYY-MM-DD HH:MM:SS"""
@@ -67,6 +68,43 @@ def fetch_ip_history(ip, token):
         return []
     except Exception:
         return []
+
+# ================= OPENPAGERANK (BULK DOMAIN AUTHORITY) =================
+def fetch_bulk_openpagerank(domains):
+    """فحص حتى لـ 100 دومين فـ ريكوست واحد فـ ثانية وحدة عبر OpenPageRank"""
+    if not domains:
+        return {}
+    url = "https://openpagerank.com/api/v1.0/getPageRank"
+    headers = {"API-OPR": OPENPAGERANK_KEY}
+    params = [("domains[]", d.lower()) for d in domains[:100]]
+
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=7)
+        if r.status_code == 200:
+            resp = r.json().get("response", [])
+            results = {}
+            for item in resp:
+                dom = item.get("domain", "").lower()
+                pr_dec = item.get("page_rank_decimal") or 0
+                rank = item.get("rank")
+                rank_str = f"#{int(rank):,}" if rank and str(rank).isdigit() else "Unranked"
+                da_score = int(round(pr_dec * 10)) if pr_dec else 0
+
+                verdict = "Low / Fresh"
+                if da_score >= 80: verdict = "Elite Authority"
+                elif da_score >= 50: verdict = "Strong Brand"
+                elif da_score >= 25: verdict = "Moderate"
+
+                results[dom] = {
+                    "da_score": da_score,
+                    "pagerank": round(pr_dec, 2) if pr_dec else 0,
+                    "global_rank": rank_str,
+                    "verdict": verdict
+                }
+            return results
+    except Exception as e:
+        print("OpenPageRank error:", e)
+    return {}
 
 # ================= HELPER FUNCTIONS =================
 def compute_age_and_expiry(created_ts, expires_ts):
@@ -171,7 +209,190 @@ def check_http_live(domain):
 def index():
     return render_template('index.html')
 
-# ================= 1. UNIFIED ALL-SCORES ENGINE =================
+# ================= 1. DOMAINS SCANNER (WITH DA & GLOBAL RANK IN BULK) =================
+@app.route('/scan', methods=['POST'])
+def scan_domains():
+    try:
+        data = request.get_json() or {}
+        raw_domains = data.get('domains', '')
+        mode = data.get('mode', 'general')
+
+        domains = [d.strip() for d in raw_domains.split('\n') if d.strip()]
+        clean_domains = [d.replace("https://", "").replace("http://", "").split("/")[0] for d in domains]
+        token = get_auth_token()
+
+        # جلب DA و PageRank لجميع دومينات الدفعة (25 دومين) فـ ريكوست واحد فائق السرعة
+        opr_cache = {}
+        if mode == 'general':
+            opr_cache = fetch_bulk_openpagerank(clean_domains)
+
+        def process_single_domain(clean):
+            if not clean:
+                return None
+
+            if mode == 'general':
+                res = fetch_sia(f"{clean}", token) or {}
+                whois_info = res.get("whois") or {}
+                raw_created = whois_info.get("created")
+                raw_expires = whois_info.get("expires")
+                score = res.get("score", 0)
+                abused = res.get("abused", False)
+
+                age_str, expiry_str, age_days = compute_age_and_expiry(raw_created, raw_expires)
+
+                resolved_ip = "N/A"
+                try:
+                    resolved_ip = socket.gethostbyname(clean)
+                except Exception: pass
+                asn_str, country_name, country_code = get_hosting_and_country(resolved_ip)
+
+                mx_provider = detect_mx_provider(clean)
+                dmarc_status = check_dmarc_protection(clean)
+                http_status = check_http_live(clean)
+
+                # جلب DA و Global Rank
+                opr_info = opr_cache.get(clean.lower(), {})
+                da_val = opr_info.get("da_score", 0)
+                global_rank = opr_info.get("global_rank", "Unranked")
+
+                if abused or score >= 60:
+                    verdict = "Malicious / Toxic"
+                elif age_days < 45 or score >= 25 or "Spoofable" in dmarc_status:
+                    verdict = "Suspicious"
+                else:
+                    verdict = "Clean / Low Risk"
+
+                return {
+                    "domain": clean,
+                    "da_score": da_val,
+                    "global_rank": global_rank,
+                    "verdict": verdict,
+                    "domain_age": age_str,
+                    "expires_in": expiry_str,
+                    "http_status": http_status,
+                    "hosting_asn": asn_str,
+                    "country": country_name,
+                    "country_code": country_code,
+                    "mx_provider": mx_provider,
+                    "dmarc_protection": dmarc_status,
+                    "last_seen": format_ts(res.get("last-seen")),
+                    "tags": res.get("tags") or ["clean"],
+                    "abused": abused,
+                    "whois": {
+                        "created": format_ts(raw_created),
+                        "expires": format_ts(raw_expires),
+                        "registrar": whois_info.get("registrar", "Not Listed / Clean")
+                    },
+                    "score": score,
+                    "clusters": (res.get("clusters") or {}).get("auth", "N/A")
+                }
+
+            elif mode == 'reputation_dim':
+                res = fetch_sia(f"{clean}", token) or {}
+                score = res.get("score", 0)
+                threat = "High" if score > 70 else ("Medium" if score > 30 else "Low")
+                return {
+                    "domain": clean,
+                    "score": score,
+                    "email_threat": "Listed" if res.get("abused") else threat,
+                    "web_threat": "Suspicious" if "suspicious" in (res.get("tags") or []) else "Clean",
+                    "phishing": "Malicious" if "phishing" in (res.get("tags") or []) else "Clean",
+                    "malware": "Malicious" if "malware" in (res.get("tags") or []) else "Clean"
+                }
+
+            elif mode == 'domain_context':
+                res = fetch_sia(f"{clean}", token) or {}
+                whois_info = res.get("whois") or {}
+                return {
+                    "domain": clean,
+                    "registrar": whois_info.get("registrar", "Cloudflare / Clean"),
+                    "nameservers": "ns1.nameserver.com, ns2.nameserver.com",
+                    "ips": "Resolved via DNS",
+                    "asn": "Active CDN / Hosting"
+                }
+
+            elif mode == 'blacklist':
+                res = fetch_sia(f"{clean}", token) or {}
+                is_abused = res.get("abused", False)
+                return {
+                    "domain": clean,
+                    "dbl": "Listed" if is_abused else "Clean",
+                    "zbl": "Clean",
+                    "detection": "Threat Observed" if is_abused else "Clean Dataset",
+                    "code": "127.0.1.2" if is_abused else "None"
+                }
+
+            elif mode == 'domain_senders':
+                senders = fetch_sia(f"{clean}/senders", token)
+                if isinstance(senders, list) and len(senders) > 0:
+                    return [{
+                        "domain": clean,
+                        "ip": s.get("ip", "N/A"),
+                        "helo": s.get("helo") or "None",
+                        "last_seen": format_ts(s.get("last-seen")),
+                        "score": s.get("score", 0)
+                    } for s in senders]
+                else:
+                    return [{
+                        "domain": clean, "ip": "No Senders Observed", "helo": "None", "last_seen": "N/A", "score": 0
+                    }]
+
+            elif mode == 'a_record':
+                return {
+                    "domain": clean, "ip": "Resolved via DNS", "ptr": clean, "ip_rep": "Neutral (0/100)", "status": "Active"
+                }
+            elif mode == 'ns_rep':
+                return {
+                    "domain": clean, "primary_ns": f"ns.{clean}", "ns_ip": "Auto-resolved", "ns_score": 0, "status": "Verified"
+                }
+            elif mode == 'hostnames':
+                return {
+                    "domain": clean, "hostname": clean, "type": "Observed Hostname", "status": "Clean"
+                }
+            return None
+
+        results = []
+        with ThreadPoolExecutor(max_workers=25) as executor:
+            raw_results = list(executor.map(process_single_domain, clean_domains))
+
+        for r in raw_results:
+            if r is not None:
+                if isinstance(r, list): results.extend(r)
+                else: results.append(r)
+
+        return jsonify({"mode": mode, "data": results})
+
+    except Exception as e:
+        print("scan_domains error:", e)
+        return jsonify({"mode": "general", "data": []})
+
+# ================= 2. DEDICATED SEO & DOMAIN AUTHORITY ROUTE =================
+@app.route('/scan_seo_authority', methods=['POST'])
+def scan_seo_authority():
+    data = request.get_json() or {}
+    raw_domains = data.get('domains', '')
+    domains = [d.strip().replace("https://", "").replace("http://", "").split("/")[0] for d in raw_domains.split('\n') if d.strip()]
+
+    if not domains:
+        return jsonify({"data": []})
+
+    # فحص عبر OpenPageRank بـ Bulk يصل لـ 100 دومين فـ ريكوست واحد
+    opr_data = fetch_bulk_openpagerank(domains)
+    results = []
+
+    for d in domains:
+        info = opr_data.get(d.lower(), {})
+        results.append({
+            "domain": d,
+            "da_score": info.get("da_score", 0),
+            "pagerank": info.get("pagerank", 0),
+            "global_rank": info.get("global_rank", "Unranked"),
+            "verdict": info.get("verdict", "Low / Fresh")
+        })
+
+    return jsonify({"data": results})
+
+# ================= 3. UNIFIED ALL-SCORES ENGINE =================
 @app.route('/scan_domain_all_scores', methods=['POST'])
 def scan_domain_all_scores():
     data = request.get_json() or {}
@@ -300,155 +521,7 @@ def scan_domain_all_scores():
         }
     })
 
-# ================= 2. DOMAINS SCANNER (MULTI-THREADED BATCHES) =================
-@app.route('/scan', methods=['POST'])
-def scan_domains():
-    try:
-        data = request.get_json() or {}
-        raw_domains = data.get('domains', '')
-        mode = data.get('mode', 'general')
-
-        domains = [d.strip() for d in raw_domains.split('\n') if d.strip()]
-        token = get_auth_token()
-
-        def process_single_domain(domain):
-            clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
-            if not clean:
-                return None
-
-            if mode == 'general':
-                res = fetch_sia(f"{clean}", token) or {}
-                whois_info = res.get("whois") or {}
-                raw_created = whois_info.get("created")
-                raw_expires = whois_info.get("expires")
-                score = res.get("score", 0)
-                abused = res.get("abused", False)
-
-                age_str, expiry_str, age_days = compute_age_and_expiry(raw_created, raw_expires)
-
-                resolved_ip = "N/A"
-                try:
-                    resolved_ip = socket.gethostbyname(clean)
-                except Exception: pass
-                asn_str, country_name, country_code = get_hosting_and_country(resolved_ip)
-
-                mx_provider = detect_mx_provider(clean)
-                dmarc_status = check_dmarc_protection(clean)
-                http_status = check_http_live(clean)
-
-                if abused or score >= 60:
-                    verdict = "Malicious / Toxic"
-                elif age_days < 45 or score >= 25 or "Spoofable" in dmarc_status:
-                    verdict = "Suspicious"
-                else:
-                    verdict = "Clean / Low Risk"
-
-                return {
-                    "domain": clean,
-                    "verdict": verdict,
-                    "domain_age": age_str,
-                    "expires_in": expiry_str,
-                    "http_status": http_status,
-                    "hosting_asn": asn_str,
-                    "country": country_name,
-                    "country_code": country_code,
-                    "mx_provider": mx_provider,
-                    "dmarc_protection": dmarc_status,
-                    "last_seen": format_ts(res.get("last-seen")),
-                    "tags": res.get("tags") or ["clean"],
-                    "abused": abused,
-                    "whois": {
-                        "created": format_ts(raw_created),
-                        "expires": format_ts(raw_expires),
-                        "registrar": whois_info.get("registrar", "Not Listed / Clean")
-                    },
-                    "score": score,
-                    "clusters": (res.get("clusters") or {}).get("auth", "N/A")
-                }
-
-            elif mode == 'reputation_dim':
-                res = fetch_sia(f"{clean}", token) or {}
-                score = res.get("score", 0)
-                threat = "High" if score > 70 else ("Medium" if score > 30 else "Low")
-                return {
-                    "domain": clean,
-                    "score": score,
-                    "email_threat": "Listed" if res.get("abused") else threat,
-                    "web_threat": "Suspicious" if "suspicious" in (res.get("tags") or []) else "Clean",
-                    "phishing": "Malicious" if "phishing" in (res.get("tags") or []) else "Clean",
-                    "malware": "Malicious" if "malware" in (res.get("tags") or []) else "Clean"
-                }
-
-            elif mode == 'domain_context':
-                res = fetch_sia(f"{clean}", token) or {}
-                whois_info = res.get("whois") or {}
-                return {
-                    "domain": clean,
-                    "registrar": whois_info.get("registrar", "Cloudflare / Clean"),
-                    "nameservers": "ns1.nameserver.com, ns2.nameserver.com",
-                    "ips": "Resolved via DNS",
-                    "asn": "Active CDN / Hosting"
-                }
-
-            elif mode == 'blacklist':
-                res = fetch_sia(f"{clean}", token) or {}
-                is_abused = res.get("abused", False)
-                return {
-                    "domain": clean,
-                    "dbl": "Listed" if is_abused else "Clean",
-                    "zbl": "Clean",
-                    "detection": "Threat Observed" if is_abused else "Clean Dataset",
-                    "code": "127.0.1.2" if is_abused else "None"
-                }
-
-            elif mode == 'domain_senders':
-                senders = fetch_sia(f"{clean}/senders", token)
-                if isinstance(senders, list) and len(senders) > 0:
-                    return [{
-                        "domain": clean,
-                        "ip": s.get("ip", "N/A"),
-                        "helo": s.get("helo") or "None",
-                        "last_seen": format_ts(s.get("last-seen")),
-                        "score": s.get("score", 0)
-                    } for s in senders]
-                else:
-                    return [{
-                        "domain": clean, "ip": "No Senders Observed", "helo": "None", "last_seen": "N/A", "score": 0
-                    }]
-
-            elif mode == 'a_record':
-                return {
-                    "domain": clean, "ip": "Resolved via DNS", "ptr": clean, "ip_rep": "Neutral (0/100)", "status": "Active"
-                }
-            elif mode == 'ns_rep':
-                return {
-                    "domain": clean, "primary_ns": f"ns.{clean}", "ns_ip": "Auto-resolved", "ns_score": 0, "status": "Verified"
-                }
-            elif mode == 'hostnames':
-                return {
-                    "domain": clean, "hostname": clean, "type": "Observed Hostname", "status": "Clean"
-                }
-            return None
-
-        # فحص متوازي بـ 25 خيط لسرعة قياسية
-        results = []
-        with ThreadPoolExecutor(max_workers=25) as executor:
-            raw_results = list(executor.map(process_single_domain, domains))
-
-        for r in raw_results:
-            if r is not None:
-                if isinstance(r, list):
-                    results.extend(r)
-                else:
-                    results.append(r)
-
-        return jsonify({"mode": mode, "data": results})
-
-    except Exception as e:
-        print("scan_domains error:", e)
-        return jsonify({"mode": "general", "data": []})
-
-# ================= 3. IP ADDRESS DATA (17 COLUMNS) =================
+# ================= 4. IP ADDRESS DATA (17 COLUMNS) =================
 @app.route('/scan_ip', methods=['POST'])
 def scan_ips():
     try:
@@ -511,7 +584,7 @@ def scan_ips():
         print("scan_ips error:", e)
         return jsonify({"data": []})
 
-# ================= 4. SUBDOMAINS RECON (MASSIVE & UNCAPPED ENGINE) =================
+# ================= 5. SUBDOMAINS RECON =================
 @app.route('/scan_subdomains', methods=['POST'])
 def scan_subdomains():
     data = request.get_json() or {}
@@ -521,11 +594,8 @@ def scan_subdomains():
         return jsonify({"data": []})
 
     candidates = set()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-    # 1. crt.name API (5.7 مليار دومين بدون حجب وبدون سقف)
     try:
         r_crtname = requests.get(f"https://crt.name/v1/search?apex={domain}", headers=headers, timeout=6)
         if r_crtname.status_code == 200:
@@ -533,10 +603,8 @@ def scan_subdomains():
                 line = line.strip().lower()
                 if line.endswith(domain) and len(line) > len(domain):
                     candidates.add(line)
-    except Exception as e:
-        print("crt.name error:", e)
+    except Exception: pass
 
-    # 2. Subdomain Center API
     try:
         r_sc = requests.get(f"https://api.subdomain.center/?domain={domain}", headers=headers, timeout=6)
         if r_sc.status_code == 200 and isinstance(r_sc.json(), list):
@@ -544,10 +612,8 @@ def scan_subdomains():
                 h = str(h).strip().lower()
                 if h.endswith(domain) and len(h) > len(domain):
                     candidates.add(h)
-    except Exception as e:
-        print("Subdomain Center error:", e)
+    except Exception: pass
 
-    # 3. Wayback Machine CDX API (HTTPS)
     try:
         wb_url = f"https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=3000"
         r_wb = requests.get(wb_url, headers=headers, timeout=7)
@@ -555,72 +621,25 @@ def scan_subdomains():
             urls = r_wb.json()
             for row in urls[1:]:
                 if row and len(row) > 0:
-                    raw_url = row[0]
-                    parsed = urlparse(raw_url if "://" in raw_url else f"http://{raw_url}")
+                    parsed = urlparse(row[0] if "://" in row[0] else f"http://{row[0]}")
                     host = (parsed.hostname or "").lower().strip()
                     if host.endswith(domain) and len(host) > len(domain):
                         candidates.add(host)
-    except Exception as e:
-        print("Wayback error:", e)
+    except Exception: pass
 
-    # 4. Anubis DB
-    try:
-        r_anubis = requests.get(f"https://jldc.me/anubis/subdomains/{domain}", headers=headers, timeout=5)
-        if r_anubis.status_code == 200 and isinstance(r_anubis.json(), list):
-            for h in r_anubis.json():
-                h = str(h).strip().lower()
-                if h.endswith(domain) and len(h) > len(domain):
-                    candidates.add(h)
-    except Exception as e:
-        pass
-
-    # 5. HackerTarget
-    try:
-        r_ht = requests.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=5)
-        if r_ht.status_code == 200 and "error" not in r_ht.text.lower():
-            for line in r_ht.text.strip().split('\n'):
-                parts = line.split(',')
-                if len(parts) >= 1:
-                    h = parts[0].strip().lower()
-                    if h.endswith(domain) and len(h) > len(domain):
-                        candidates.add(h)
-    except Exception as e:
-        pass
-
-    # ================= فحص الـ Live DNS بـ 50 Thread فائق السرعة =================
     def verify_subdomain(sub):
         try:
             ip = socket.gethostbyname(sub)
-            return {
-                "subdomain": sub,
-                "ip": ip,
-                "status": "Active (Live IP)",
-                "issuer": f"Live IP: {ip}",
-                "logged_at": "Active / Live DNS"
-            }
-        except Exception:
-            pass
+            return {"subdomain": sub, "ip": ip, "status": "Active (Live IP)", "issuer": f"Live IP: {ip}", "logged_at": "Active / Live DNS"}
+        except Exception: pass
 
         try:
             cname_ans = dns.resolver.resolve(sub, 'CNAME')
             target = str(cname_ans[0].target).rstrip('.')
-            return {
-                "subdomain": sub,
-                "ip": f"CNAME: {target}",
-                "status": "Active (CNAME)",
-                "issuer": f"CNAME: {target}",
-                "logged_at": "Active / Live DNS"
-            }
-        except Exception:
-            pass
+            return {"subdomain": sub, "ip": f"CNAME: {target}", "status": "Active (CNAME)", "issuer": f"CNAME: {target}", "logged_at": "Active / Live DNS"}
+        except Exception: pass
 
-        return {
-            "subdomain": sub,
-            "ip": "Unresolved / Passive",
-            "status": "Observed (Archive/CT)",
-            "issuer": "Observed",
-            "logged_at": "Historical"
-        }
+        return {"subdomain": sub, "ip": "Unresolved / Passive", "status": "Observed (Archive/CT)", "issuer": "Observed", "logged_at": "Historical"}
 
     candidate_list = list(candidates)[:800]
     with ThreadPoolExecutor(max_workers=50) as executor:
@@ -631,7 +650,7 @@ def scan_subdomains():
 
     return jsonify({"data": verified_results})
 
-# ================= 5. CNAME INSPECTOR (أداة مستقلة) =================
+# ================= 6. CNAME INSPECTOR =================
 @app.route('/scan_cname', methods=['POST'])
 def scan_cname():
     data = request.get_json() or {}
@@ -672,31 +691,23 @@ def scan_cname():
         try:
             cname_ans = resolver.resolve(host, 'CNAME')
             cname_target = str(cname_ans[0].target).rstrip('.')
-            
             target_ip = "N/A"
-            try:
-                target_ip = socket.gethostbyname(cname_target)
-            except Exception:
-                pass
+            try: target_ip = socket.gethostbyname(cname_target)
+            except Exception: pass
 
             provider = detect_cname_provider(cname_target)
             status = "Pointed & Active"
-            if target_ip == "N/A":
-                status = "Dangling CNAME ⚠️ (Takeover Risk)"
+            if target_ip == "N/A": status = "Dangling CNAME ⚠️ (Takeover Risk)"
 
             results.append({
-                "subdomain": host,
-                "cname_target": cname_target,
-                "target_ip": target_ip,
-                "provider": provider,
-                "status": status
+                "subdomain": host, "cname_target": cname_target, "target_ip": target_ip,
+                "provider": provider, "status": status
             })
-        except Exception:
-            continue
+        except Exception: continue
 
     return jsonify({"data": results})
 
-# ================= 6. MULTI-DNSBL BLACKLIST =================
+# ================= 7. MULTI-DNSBL BLACKLIST =================
 DNSBL_PROVIDERS = [
     {"name": "Spamhaus ZEN", "host": "zen.spamhaus.org"},
     {"name": "SpamCop", "host": "bl.spamcop.net"},
@@ -722,10 +733,8 @@ def scan_email_dnsbl():
             mx_host = str(mx_ans[0].exchange).rstrip('.')
             target_ip = socket.gethostbyname(mx_host)
         except Exception:
-            try:
-                target_ip = socket.gethostbyname(target)
-            except Exception:
-                target_ip = None
+            try: target_ip = socket.gethostbyname(target)
+            except Exception: target_ip = None
 
     if not target_ip:
         return jsonify({"data": [{"dnsbl": "DNS Resolution", "target": target, "ip": "Failed", "status": "Error", "details": "Could not resolve IP"}]})
@@ -743,7 +752,7 @@ def scan_email_dnsbl():
 
     return jsonify({"data": results})
 
-# ================= 7. GOOGLE & YAHOO COMPLIANCE =================
+# ================= 8. GOOGLE & YAHOO COMPLIANCE =================
 @app.route('/scan_email_compliance', methods=['POST'])
 def scan_email_compliance():
     data = request.get_json() or {}
@@ -755,16 +764,12 @@ def scan_email_compliance():
         has_spf, has_dmarc, dmarc_policy, has_dkim, has_ptr = False, False, "None", False, False
 
         try:
-            txt_records = dns.resolver.resolve(clean, 'TXT')
-            for r in txt_records:
-                if r.to_text().strip('"').startswith("v=spf1"):
-                    has_spf = True
-                    break
+            for r in dns.resolver.resolve(clean, 'TXT'):
+                if r.to_text().strip('"').startswith("v=spf1"): has_spf = True; break
         except Exception: pass
 
         try:
-            dmarc_txt = dns.resolver.resolve(f"_dmarc.{clean}", 'TXT')
-            for r in dmarc_txt:
+            for r in dns.resolver.resolve(f"_dmarc.{clean}", 'TXT'):
                 txt = r.to_text()
                 if "v=DMARC1" in txt:
                     has_dmarc = True
@@ -774,17 +779,13 @@ def scan_email_compliance():
 
         for sel in ['google', 'k1', 'default', 's1', 'mail']:
             try:
-                if dns.resolver.resolve(f"{sel}._domainkey.{clean}", 'TXT'):
-                    has_dkim = True
-                    break
+                if dns.resolver.resolve(f"{sel}._domainkey.{clean}", 'TXT'): has_dkim = True; break
             except Exception: continue
 
         try:
             mx_ans = dns.resolver.resolve(clean, 'MX')
-            mx_server = str(mx_ans[0].exchange).rstrip('.')
-            mx_ip = socket.gethostbyname(mx_server)
-            if socket.gethostbyaddr(mx_ip)[0]:
-                has_ptr = True
+            mx_ip = socket.gethostbyname(str(mx_ans[0].exchange).rstrip('.'))
+            if socket.gethostbyaddr(mx_ip)[0]: has_ptr = True
         except Exception: pass
 
         score = (25 if has_spf else 0) + (25 if has_dmarc else 0) + (25 if has_dkim else 0) + (25 if has_ptr else 0)
@@ -798,7 +799,7 @@ def scan_email_compliance():
 
     return jsonify({"data": results})
 
-# ================= 8. SMTP & PORT 25 HEALTH =================
+# ================= 9. SMTP & PORT 25 HEALTH =================
 @app.route('/scan_smtp_health', methods=['POST'])
 def scan_smtp_health():
     data = request.get_json() or {}
@@ -831,7 +832,7 @@ def scan_smtp_health():
 
     return jsonify({"data": results})
 
-# ================= 9. BIMI & MTA-STS =================
+# ================= 10. BIMI & MTA-STS =================
 @app.route('/scan_email_advanced', methods=['POST'])
 def scan_email_advanced():
     data = request.get_json() or {}
@@ -842,8 +843,7 @@ def scan_email_advanced():
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0]
         bimi_status, bimi_logo = "Not Found", "None"
         try:
-            bimi_txt = dns.resolver.resolve(f"default._bimi.{clean}", 'TXT')
-            for r in bimi_txt:
+            for r in dns.resolver.resolve(f"default._bimi.{clean}", 'TXT'):
                 txt = r.to_text().strip('"')
                 if "v=BIMI1" in txt:
                     bimi_status = "Active"
@@ -853,11 +853,8 @@ def scan_email_advanced():
 
         mta_sts = "Missing"
         try:
-            mta_txt = dns.resolver.resolve(f"_mta-sts.{clean}", 'TXT')
-            for r in mta_txt:
-                if "v=STSv1" in r.to_text():
-                    mta_sts = "Enforced"
-                    break
+            for r in dns.resolver.resolve(f"_mta-sts.{clean}", 'TXT'):
+                if "v=STSv1" in r.to_text(): mta_sts = "Enforced"; break
         except Exception: pass
 
         results.append({
@@ -867,7 +864,7 @@ def scan_email_advanced():
 
     return jsonify({"data": results})
 
-# ================= 10. SSL & VIRUSTOTAL =================
+# ================= 11. SSL & VIRUSTOTAL =================
 @app.route('/scan_ssl', methods=['POST'])
 def scan_ssl():
     data = request.get_json() or {}
