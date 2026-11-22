@@ -448,7 +448,32 @@ def scan_domains():
         print("scan_domains error:", e)
         return jsonify({"mode": "general", "data": []})
 
-# ================= 3. OPENTEXT WEB REPUTATION & CATEGORY (BULK) =================
+# إعدادات Cloudflare Intel API
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "")
+CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
+
+def fetch_cloudflare_intel(domain):
+    """جلب التصنيف الرسمي والسمعة من Cloudflare Intel & Radar API"""
+    if not CF_ACCOUNT_ID or not CF_API_TOKEN:
+        return None
+        
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/intel/domain?domain={domain}"
+    headers = {
+        "Authorization": f"Bearer {CF_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            res = r.json()
+            if res.get("success") and res.get("result"):
+                return res["result"]
+        return None
+    except Exception as e:
+        print("Cloudflare Intel Error:", e)
+        return None
+
+# ================= OPENTEXT STYLE WITH CLOUDFLARE INTELLIGENCE =================
 @app.route('/scan_web_reputation', methods=['POST'])
 def scan_web_reputation():
     data = request.get_json() or {}
@@ -456,38 +481,53 @@ def scan_web_reputation():
     domains = [d.strip() for d in raw_domains.split('\n') if d.strip()]
     token = get_auth_token()
 
-    def categorize_and_score(domain):
+    def process_reputation_worker(domain):
         clean = domain.replace("https://", "").replace("http://", "").split("/")[0].lower()
         if not clean:
             return None
 
+        # 1. محاولة جلب التصنيف والسمعة من Cloudflare Intel
+        cf_data = fetch_cloudflare_intel(clean)
+        
+        category = "Business & Corporate Services"
+        cf_risk_score = None
+
+        if cf_data:
+            # استخراج التصنيف الرسمي من Cloudflare (Content Categories)
+            content_cats = cf_data.get("content_categories") or []
+            if content_cats:
+                # كيجيب أول تصنيف رسمي (مثلاً: Technology, Finance, Shopping, etc.)
+                category = content_cats[0].get("name", "Computer and Internet Info")
+            
+            # استخراج سكور الخطر من Cloudflare
+            cf_risk_score = cf_data.get("risk_score") # سكور الخطر من 0 لـ 100
+
+        # 2. جلب معطيات Spamhaus وعمر الدومين
         sia_res = fetch_sia(f"{clean}", token) or {}
         raw_score = sia_res.get("score", 0)
         abused = sia_res.get("abused", False)
         whois_info = sia_res.get("whois") or {}
         raw_created = whois_info.get("created")
 
-        base_rep = 85
-        if abused:
-            base_rep = 15
+        # 3. حساب سكور السمعة على طريقة OpenText (0 لـ 100)
+        if cf_risk_score is not None:
+            # تحويل سكور الخطر لسكور ثقة (Trust Score)
+            rep_score = max(5, min(99, 100 - cf_risk_score))
         else:
-            base_rep -= int(raw_score * 0.8)
+            base_rep = 85
+            if abused: base_rep = 15
+            else: base_rep -= int(raw_score * 0.8)
 
-        if raw_created and raw_created != "N/A":
-            try:
-                days = (datetime.utcnow().timestamp() - int(raw_created)) / 86400
-                if days >= 1825: base_rep += 10
-                elif days < 30: base_rep -= 25
-            except Exception: pass
+            if raw_created and raw_created != "N/A":
+                try:
+                    days = (datetime.utcnow().timestamp() - int(raw_created)) / 86400
+                    if days >= 1825: base_rep += 10
+                    elif days < 30: base_rep -= 25
+                except Exception: pass
+            
+            rep_score = max(5, min(99, base_rep))
 
-        http_st = check_http_live(clean)
-        if "200" in http_st:
-            base_rep += 5
-        elif "Offline" in http_st:
-            base_rep -= 15
-
-        rep_score = max(5, min(99, base_rep))
-
+        # 4. تحديد المستوى والأيقونة
         if rep_score >= 80:
             verdict = "Trustworthy"
             verdict_icon = "check"
@@ -509,39 +549,6 @@ def scan_web_reputation():
             verdict_icon = "danger"
             tier = 1
 
-        d_lower = clean
-        cat = "Business & Corporate Services"
-
-        gambling_kw = ["lottery", "lotto", "sambad", "bet", "casino", "poker", "jackpot", "gamble"]
-        tech_kw = ["tech", "software", "cloud", "api", "dev", "host", "net", "app", "code", "cyber", "ai", "data", "cdn"]
-        finance_kw = ["bank", "pay", "crypto", "finance", "trade", "invest", "loan", "wallet", "credit"]
-        shop_kw = ["shop", "store", "cart", "market", "buy", "mall", "deals"]
-        news_kw = ["news", "media", "press", "times", "post", "gazette", "daily", "journal"]
-        adult_kw = ["porn", "xxx", "adult", "sex"]
-
-        if any(w in d_lower for w in gambling_kw):
-            cat = "Gambling and Lottery"
-        elif any(w in d_lower for w in adult_kw):
-            cat = "Adult & Explicit Content"
-        elif any(w in d_lower for w in finance_kw):
-            cat = "Financial Services & Banking"
-        elif any(w in d_lower for w in shop_kw):
-            cat = "Shopping and E-Commerce"
-        elif any(w in d_lower for w in news_kw):
-            cat = "News and Media"
-        elif any(w in d_lower for w in tech_kw) or clean.endswith((".io", ".ai", ".dev", ".tech")):
-            cat = "Computer and Internet Info"
-        elif "Offline" in http_st and ("park" in d_lower or "domain" in d_lower):
-            cat = "Parked / Inactive Domain"
-        else:
-            try:
-                r = requests.get(f"http://{clean}", timeout=2.0, headers={"User-Agent": "Mozilla/5.0"})
-                t_lower = r.text[:2000].lower()
-                if "shop" in t_lower or "cart" in t_lower: cat = "Shopping and E-Commerce"
-                elif "tech" in t_lower or "software" in t_lower: cat = "Computer and Internet Info"
-                elif "lottery" in t_lower or "result" in t_lower: cat = "Gambling and Lottery"
-            except Exception: pass
-
         return {
             "domain": clean,
             "score": rep_score,
@@ -549,11 +556,11 @@ def scan_web_reputation():
             "verdict": verdict,
             "verdict_icon": verdict_icon,
             "status_text": f"{verdict} ({rep_score} of 100)",
-            "category": cat
+            "category": category
         }
 
     with ThreadPoolExecutor(max_workers=25) as executor:
-        results = list(executor.map(categorize_and_score, domains))
+        results = list(executor.map(process_reputation_worker, domains))
 
     valid_results = [r for r in results if r is not None]
     return jsonify({"data": valid_results})
